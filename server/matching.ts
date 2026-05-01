@@ -1,4 +1,4 @@
-import { storage } from "./storage";
+import { getStorage, type IStorage } from "./storage";
 import type { Request as PartnerRequest } from "@shared/schema";
 
 // Greedy matcher. Pairs users on:
@@ -6,8 +6,9 @@ import type { Request as PartnerRequest } from "@shared/schema";
 //   - text affinity (same exact title scores highest)
 //   - same pace bracket (preferred, not required)
 // Returns the number of pairings created.
-export function runMatching(): number {
-  const open = storage.getOpenRequests();
+export async function runMatching(store?: IStorage): Promise<number> {
+  store ??= getStorage();
+  const open = await store.getOpenRequests();
   const taken = new Set<string>();
   let created = 0;
 
@@ -49,20 +50,20 @@ export function runMatching(): number {
     }
 
     if (best && best.score >= 20) {
-      const pairing = storage.createPairing({
+      const pairing = await store.createPairing({
         userAId: a.userId,
         userBId: best.req.userId,
         // prefer the more specific (longer) title
         textTitle: a.textTitle.length >= best.req.textTitle.length ? a.textTitle : best.req.textTitle,
         pace: a.pace,
       });
-      storage.closeRequest(a.id);
-      storage.closeRequest(best.req.id);
+      await store.closeRequest(a.id);
+      await store.closeRequest(best.req.id);
       taken.add(a.id);
       taken.add(best.req.id);
       created += 1;
       // Auto-create the first session so the pair has somewhere to land.
-      storage.createSession(pairing.id);
+      await store.createSession(pairing.id);
     }
   }
 

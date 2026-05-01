@@ -50,7 +50,7 @@ export default function SessionRoom() {
             className="font-serif italic text-base shrink-0"
             data-testid="link-home-from-room"
           >
-            Chavruta
+            Pilpul
           </Link>
           <span className="text-muted-foreground hidden sm:inline">·</span>
           <p className="font-serif italic truncate">
@@ -403,7 +403,7 @@ function SessionTimer() {
 
 function JitsiStrip({ pairingId }: { pairingId: string }) {
   const [open, setOpen] = useState(false);
-  const room = `chavruta-${pairingId}`;
+  const room = `pilpul-${pairingId}`;
   return (
     <div className="border-t border-border bg-background">
       <div className="px-6 py-2 flex items-center justify-between text-xs">

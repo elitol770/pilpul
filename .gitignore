@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .vite/
+.wrangler/
 *.zip
 
 # SQLite database files — never commit; exposes demo data at rest

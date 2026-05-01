@@ -12,7 +12,7 @@ export function PageShell({ children, narrow }: { children: ReactNode; narrow?: 
           }
         >
           <Link href="/" className="font-serif italic text-xl tracking-tight" data-testid="link-home">
-            Chavruta
+            Pilpul
           </Link>
           <span className="smallcaps">iron sharpens iron</span>
         </div>

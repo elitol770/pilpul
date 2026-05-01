@@ -9,21 +9,21 @@ function getVisitorId(): string {
   try {
     if (typeof window !== "undefined") {
       const w = window as any;
-      if (w.__chavruta_vid) return w.__chavruta_vid;
+      if (w.__pilpul_vid) return w.__pilpul_vid;
       // window.name survives reloads within the same tab and works in iframes
-      const existing = window.name && window.name.startsWith("chv-") ? window.name : null;
+      const existing = window.name && window.name.startsWith("pil-") ? window.name : null;
       const id =
         existing ||
-        "chv-" +
+        "pil-" +
           (crypto?.randomUUID
             ? crypto.randomUUID()
             : Math.random().toString(36).slice(2) + Date.now().toString(36));
       window.name = id;
-      w.__chavruta_vid = id;
+      w.__pilpul_vid = id;
       return id;
     }
   } catch {}
-  return "chv-anon";
+  return "pil-anon";
 }
 
 function authHeaders(extra?: Record<string, string>): HeadersInit {

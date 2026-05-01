@@ -26,7 +26,7 @@ export default function SignIn() {
       <div className="pt-8 pb-12">
         <h1 className="font-serif text-2xl mb-3">Find a partner. Read one book together.</h1>
         <p className="text-muted-foreground leading-relaxed">
-          Chavruta pairs two people, anywhere on Earth, for sustained one-on-one study of a
+          Pilpul pairs two people, anywhere on Earth, for sustained one-on-one study of a
           shared text. Enter your email to begin. We will not send you anything you didn't ask for.
         </p>
 

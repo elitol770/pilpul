@@ -1,11 +1,11 @@
-# Chavruta
+# Pilpul
 
 A calm, paper/ink web app pairing two people anywhere for sustained one-on-one study of a shared text.
 
 ## Stack
 
 - React + Vite + Tailwind + shadcn/ui
-- Express backend, better-sqlite3 + Drizzle ORM
+- Express backend with Supabase persistence
 - wouter v3 (hash routing for iframe compatibility)
 - TanStack Query
 - Jitsi public meet embed for audio
@@ -15,10 +15,12 @@ A calm, paper/ink web app pairing two people anywhere for sustained one-on-one s
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-Opens on http://localhost:5000. SQLite DB is created automatically on first run as `data.db` in the project root.
+Opens on http://localhost:5000. The server expects `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` in `.env`.
 
 ## Build for production
 
@@ -29,7 +31,9 @@ NODE_ENV=production node dist/index.cjs
 
 ## Auth model
 
-There is no real magic-link email. Identity is per-browser-tab via `window.name`, mapped server-side to a user record. The "claim email" endpoint creates/loads a user by email and links them to the visitor.
+There is no real magic-link email. Identity is per-browser-tab via `window.name`,
+persisted server-side in Supabase as a visitor session. The "claim email"
+endpoint creates/loads a user by email and links them to the visitor.
 
 ## Demo seed
 
@@ -66,7 +70,7 @@ Greedy matcher in `server/matching.ts`:
 
 ## Deferred / not built
 
-- Cloudflare Workers/D1 (using Express + SQLite instead)
+- Cloudflare Pages Functions or Workers adapter for the backend
 - Yjs CRDT (notebook uses 600ms debounced PUT + 2s GET poll)
 - Reports, admin, curated rounds, open requests board
 - Stripe credit wrapper
