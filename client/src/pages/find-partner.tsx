@@ -136,7 +136,7 @@ export default function FindPartner() {
                 <div>
                   <span className="smallcaps block">pdf</span>
                   <p className="text-xs text-muted-foreground italic mt-1">
-                    Upload a private copy, or import a direct PDF link.
+                    Upload a private copy, or import a page that links to a PDF.
                   </p>
                 </div>
                 {selectedText && (
@@ -172,7 +172,7 @@ export default function FindPartner() {
                 <input
                   value={pdfUrl}
                   onChange={(e) => setPdfUrl(e.target.value)}
-                  placeholder="https://example.org/text.pdf"
+                  placeholder="https://example.org/text-or-page"
                   data-testid="input-pdf-url"
                   className="flex-1 min-w-0 bg-card border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
                 />

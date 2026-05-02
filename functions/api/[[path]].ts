@@ -2,6 +2,14 @@ import { z } from "zod";
 import { createServerSupabaseClient, createStorage, type IStorage } from "../../server/storage";
 import { runMatching } from "../../server/matching";
 import {
+  cleanTitle,
+  fetchPdfFromWeb,
+  isPdfBytes,
+  MAX_PDF_BYTES,
+  PdfFetchError,
+  PDF_BUCKET,
+} from "../../server/pdf";
+import {
   claimEmailSchema,
   fetchPdfSchema,
   insertRequestSchema,
@@ -18,9 +26,6 @@ type PagesContext = {
   request: Request;
   env: Env;
 };
-
-const PDF_BUCKET = "reading-texts";
-const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -50,27 +55,6 @@ async function requireUser(store: IStorage, request: Request) {
     return { user: null, response: json({ message: "Not signed in" }, 401) };
   }
   return { user, response: null };
-}
-
-function cleanTitle(value: unknown, fallback: string): string {
-  const title = typeof value === "string" ? value.trim() : "";
-  return (title || fallback).replace(/\.pdf$/i, "").slice(0, 180);
-}
-
-function titleFromUrl(url: URL): string {
-  const last = url.pathname.split("/").filter(Boolean).pop();
-  if (!last) return url.hostname;
-  try {
-    return decodeURIComponent(last).replace(/[-_]+/g, " ");
-  } catch {
-    return last.replace(/[-_]+/g, " ");
-  }
-}
-
-function isPdfBytes(buffer: ArrayBuffer): boolean {
-  if (buffer.byteLength < 5) return false;
-  const sig = new Uint8Array(buffer.slice(0, 5));
-  return sig[0] === 0x25 && sig[1] === 0x50 && sig[2] === 0x44 && sig[3] === 0x46 && sig[4] === 0x2d;
 }
 
 type SavePdfResult =
@@ -198,34 +182,22 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       const parse = fetchPdfSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
 
-      const sourceUrl = new URL(parse.data.url);
-      if (sourceUrl.protocol !== "http:" && sourceUrl.protocol !== "https:") {
-        return json({ message: "Enter an http or https PDF URL" }, 400);
-      }
-
-      const fetched = await fetch(sourceUrl.toString(), {
-        headers: { Accept: "application/pdf" },
-      });
-      if (!fetched.ok) return json({ message: `Could not fetch PDF (${fetched.status})` }, 400);
-
-      const contentType = fetched.headers.get("content-type") ?? "";
-      const contentLength = Number(fetched.headers.get("content-length") ?? 0);
-      const urlLooksPdf = sourceUrl.pathname.toLowerCase().endsWith(".pdf");
-      if (!contentType.toLowerCase().includes("pdf") && !urlLooksPdf) {
-        return json({ message: "That URL does not appear to be a direct PDF" }, 400);
-      }
-      if (contentLength > MAX_PDF_BYTES) {
-        return json({ message: "PDF must be 50 MB or smaller" }, 400);
+      let fetchedPdf;
+      try {
+        fetchedPdf = await fetchPdfFromWeb(parse.data.url);
+      } catch (error) {
+        if (error instanceof PdfFetchError) return json({ message: error.message }, error.status);
+        throw error;
       }
 
       const saved = await savePdf({
         env,
         store,
         userId: auth.user.id,
-        title: cleanTitle(parse.data.title, titleFromUrl(sourceUrl)),
+        title: cleanTitle(parse.data.title, fetchedPdf.titleFallback),
         sourceKind: "web_pdf",
-        sourceUrl: sourceUrl.toString(),
-        buffer: await fetched.arrayBuffer(),
+        sourceUrl: fetchedPdf.sourceUrl,
+        buffer: fetchedPdf.buffer,
       });
       if (!saved.ok) return saved.response;
       return json({ text: saved.text });

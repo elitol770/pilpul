@@ -105,6 +105,6 @@ export const createReadingTextSchema = z.object({
 export type CreateReadingText = z.infer<typeof createReadingTextSchema>;
 
 export const fetchPdfSchema = z.object({
-  url: z.string().url("Enter a direct PDF URL"),
+  url: z.string().url("Enter a PDF URL or a page with a PDF link"),
   title: z.string().max(180).optional(),
 });
