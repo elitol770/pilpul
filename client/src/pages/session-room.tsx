@@ -4,17 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { findText } from "@/lib/texts";
 import { useAuth } from "@/lib/auth";
+import type { ReadingText } from "@shared/schema";
 
 type RoomData = {
   pairing: {
     id: string;
     textTitle: string;
+    textSourceId: string | null;
     pace: string | null;
     notebookContent: string;
     notebookUpdatedAt: string | null;
     status: string;
   };
   partner: { firstName: string | null; city: string | null } | null;
+  readingText: (ReadingText & { signedUrl: string }) | null;
 };
 
 export default function SessionRoom() {
@@ -39,6 +42,7 @@ export default function SessionRoom() {
   const pairing = data.pairing;
   const partner = data.partner;
   const text = findText(pairing.textTitle);
+  const title = data.readingText?.title ?? text.title;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -54,7 +58,7 @@ export default function SessionRoom() {
           </Link>
           <span className="text-muted-foreground hidden sm:inline">·</span>
           <p className="font-serif italic truncate">
-            <span className="text-foreground">{text.title}</span>
+            <span className="text-foreground">{title}</span>
             {partner?.firstName ? (
               <span className="text-muted-foreground"> with {partner.firstName}</span>
             ) : null}
@@ -99,27 +103,30 @@ export default function SessionRoom() {
             (tab === "text" ? "block" : "hidden md:block")
           }
         >
-          <div className="max-w-prose mx-auto px-6 py-8">
-            <span className="smallcaps">{text.source}</span>
-            <h2 className="font-serif italic text-xl mt-1">{text.title}</h2>
-            {text.author && (
-              <p className="text-muted-foreground text-sm mt-1">{text.author}</p>
-            )}
-            <div className="rule mt-5 mb-6" />
-            {text.passages.map((p, i) => (
-              <article key={i} className="mb-10">
-                <span className="smallcaps">{p.label}</span>
-                <div
-                  className="font-serif text-[1.0625rem] leading-[1.75] mt-3 space-y-4 prose-paper"
-                  dangerouslySetInnerHTML={{ __html: p.html }}
-                />
-              </article>
-            ))}
-            <p className="text-xs text-muted-foreground italic mt-12">
-              In production, the full text streams in from Sefaria, Project Gutenberg, an
-              uploaded EPUB, or a URL rendered in reader-mode. This is a curated demo passage.
-            </p>
-          </div>
+          {data.readingText?.signedUrl ? (
+            <PdfReader text={data.readingText} />
+          ) : (
+            <div className="max-w-prose mx-auto px-6 py-8">
+              <span className="smallcaps">{text.source}</span>
+              <h2 className="font-serif italic text-xl mt-1">{text.title}</h2>
+              {text.author && (
+                <p className="text-muted-foreground text-sm mt-1">{text.author}</p>
+              )}
+              <div className="rule mt-5 mb-6" />
+              {text.passages.map((p, i) => (
+                <article key={i} className="mb-10">
+                  <span className="smallcaps">{p.label}</span>
+                  <div
+                    className="font-serif text-[1.0625rem] leading-[1.75] mt-3 space-y-4 prose-paper"
+                    dangerouslySetInnerHTML={{ __html: p.html }}
+                  />
+                </article>
+              ))}
+              <p className="text-xs text-muted-foreground italic mt-12">
+                No PDF is attached to this pairing yet, so the room is showing a demo passage.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Notebook + Jitsi + AI */}
@@ -154,6 +161,30 @@ export default function SessionRoom() {
 
           <JitsiStrip pairingId={pairing.id} />
         </section>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+
+function PdfReader({ text }: { text: ReadingText & { signedUrl: string } }) {
+  return (
+    <div className="h-full min-h-[calc(100vh-106px)] flex flex-col">
+      <div className="px-6 pt-6 pb-4">
+        <span className="smallcaps">pdf</span>
+        <h2 className="font-serif italic text-xl mt-1">{text.title}</h2>
+        {text.sourceUrl && (
+          <p className="text-xs text-muted-foreground truncate mt-1">{text.sourceUrl}</p>
+        )}
+      </div>
+      <div className="flex-1 min-h-[70vh] px-6 pb-6">
+        <iframe
+          title={text.title}
+          src={`${text.signedUrl}#view=FitH`}
+          className="w-full h-full min-h-[70vh] border border-border rounded-sm bg-card"
+          data-testid="iframe-pdf-reader"
+        />
       </div>
     </div>
   );

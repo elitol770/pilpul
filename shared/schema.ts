@@ -14,6 +14,7 @@ export type Request = {
   id: string;
   userId: string;
   textTitle: string;
+  textSourceId: string | null;
   pace: "slow" | "medium" | "fast";
   commitment: "casual" | "serious";
   scheduleWindows: string | null;
@@ -27,6 +28,7 @@ export type Pairing = {
   userAId: string;
   userBId: string;
   textTitle: string;
+  textSourceId: string | null;
   textSource: string | null;
   pace: "slow" | "medium" | "fast" | null;
   startedAt: string;
@@ -47,6 +49,19 @@ export type StudySession = {
   createdAt: string;
 };
 
+export type ReadingText = {
+  id: string;
+  ownerUserId: string;
+  title: string;
+  sourceKind: "upload" | "web_pdf";
+  sourceUrl: string | null;
+  storageBucket: string;
+  storagePath: string;
+  mimeType: string;
+  fileSize: number | null;
+  createdAt: string;
+};
+
 export const insertUserSchema = z.object({
   email: z.string().email("Enter a valid email"),
   firstName: z.string().max(40).nullable().optional(),
@@ -58,6 +73,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export const insertRequestSchema = z.object({
   textTitle: z.string().min(1, "What do you want to read?").max(160),
+  textSourceId: z.string().uuid().nullable().optional(),
   pace: z.enum(["slow", "medium", "fast"]),
   commitment: z.enum(["casual", "serious"]),
   scheduleWindows: z.string().nullable().optional(),
@@ -77,4 +93,18 @@ export type Profile = z.infer<typeof profileSchema>;
 
 export const claimEmailSchema = z.object({
   email: z.string().email("Enter a valid email"),
+});
+
+export const createReadingTextSchema = z.object({
+  title: z.string().min(1, "Title is required").max(180),
+  sourceKind: z.enum(["upload", "web_pdf"]),
+  sourceUrl: z.string().url().nullable().optional(),
+  storagePath: z.string().min(1),
+  fileSize: z.number().int().nonnegative().nullable().optional(),
+});
+export type CreateReadingText = z.infer<typeof createReadingTextSchema>;
+
+export const fetchPdfSchema = z.object({
+  url: z.string().url("Enter a direct PDF URL"),
+  title: z.string().max(180).optional(),
 });

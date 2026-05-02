@@ -43,6 +43,10 @@ export async function runMatching(store?: IStorage): Promise<number> {
       const dp = Math.abs(paceOrder[a.pace as keyof typeof paceOrder] - paceOrder[b.pace as keyof typeof paceOrder]);
       score += dp === 0 ? 20 : dp === 1 ? 8 : 0;
 
+      // If both people picked the same uploaded/imported PDF, that is the
+      // strongest signal that they are asking for the same concrete text.
+      if (a.textSourceId && a.textSourceId === b.textSourceId) score += 120;
+
       // Language overlap
       if ((a.language ?? "").toLowerCase() === (b.language ?? "").toLowerCase()) score += 5;
 
@@ -55,6 +59,7 @@ export async function runMatching(store?: IStorage): Promise<number> {
         userBId: best.req.userId,
         // prefer the more specific (longer) title
         textTitle: a.textTitle.length >= best.req.textTitle.length ? a.textTitle : best.req.textTitle,
+        textSourceId: a.textSourceId ?? best.req.textSourceId ?? null,
         pace: a.pace,
       });
       await store.closeRequest(a.id);

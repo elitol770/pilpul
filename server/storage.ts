@@ -1,7 +1,9 @@
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import type {
+  CreateReadingText,
   InsertRequest,
   Pairing,
+  ReadingText,
   Request as PartnerRequest,
   StudySession,
   User,
@@ -21,6 +23,7 @@ type DbRequest = {
   id: string;
   user_id: string;
   text_title: string;
+  text_source_id: string | null;
   pace: "slow" | "medium" | "fast";
   commitment: "casual" | "serious";
   schedule_windows: string | null;
@@ -34,6 +37,7 @@ type DbPairing = {
   user_a_id: string;
   user_b_id: string;
   text_title: string;
+  text_source_id: string | null;
   text_source: string | null;
   pace: "slow" | "medium" | "fast" | null;
   started_at: string;
@@ -51,6 +55,19 @@ type DbSession = {
   started_at: string | null;
   ended_at: string | null;
   recap: string | null;
+  created_at: string;
+};
+
+type DbReadingText = {
+  id: string;
+  owner_user_id: string;
+  title: string;
+  source_kind: "upload" | "web_pdf";
+  source_url: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  file_size: number | null;
   created_at: string;
 };
 
@@ -113,6 +130,7 @@ function mapRequest(row: DbRequest): PartnerRequest {
     id: row.id,
     userId: row.user_id,
     textTitle: row.text_title,
+    textSourceId: row.text_source_id,
     pace: row.pace,
     commitment: row.commitment,
     scheduleWindows: row.schedule_windows,
@@ -128,6 +146,7 @@ function mapPairing(row: DbPairing): Pairing {
     userAId: row.user_a_id,
     userBId: row.user_b_id,
     textTitle: row.text_title,
+    textSourceId: row.text_source_id,
     textSource: row.text_source,
     pace: row.pace,
     startedAt: row.started_at,
@@ -136,6 +155,21 @@ function mapPairing(row: DbPairing): Pairing {
     nextSessionAt: row.next_session_at,
     notebookContent: row.notebook_content,
     notebookUpdatedAt: row.notebook_updated_at,
+  };
+}
+
+function mapReadingText(row: DbReadingText): ReadingText {
+  return {
+    id: row.id,
+    ownerUserId: row.owner_user_id,
+    title: row.title,
+    sourceKind: row.source_kind,
+    sourceUrl: row.source_url,
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    mimeType: row.mime_type,
+    fileSize: row.file_size,
+    createdAt: row.created_at,
   };
 }
 
@@ -163,6 +197,11 @@ export interface IStorage {
   linkVisitorToUser(visitorId: string, userId: string): Promise<void>;
   unlinkVisitor(visitorId: string): Promise<void>;
 
+  createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText>;
+  listReadingTextsForUser(userId: string): Promise<ReadingText[]>;
+  getReadingText(id: string): Promise<ReadingText | undefined>;
+  createReadingTextSignedUrl(id: string): Promise<string>;
+
   createRequest(userId: string, data: InsertRequest): Promise<PartnerRequest>;
   getOpenRequests(): Promise<PartnerRequest[]>;
   getUserOpenRequest(userId: string): Promise<PartnerRequest | undefined>;
@@ -173,6 +212,7 @@ export interface IStorage {
     userAId: string;
     userBId: string;
     textTitle: string;
+    textSourceId?: string | null;
     pace?: string | null;
     textSource?: string | null;
   }): Promise<Pairing>;
@@ -264,6 +304,57 @@ export class SupabaseStorage implements IStorage {
     throwDb(error, "unlink visitor session");
   }
 
+  async createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText> {
+    const { data: row, error } = await this.db
+      .from("reading_texts")
+      .insert({
+        id: id(),
+        owner_user_id: userId,
+        title: data.title,
+        source_kind: data.sourceKind,
+        source_url: data.sourceUrl ?? null,
+        storage_bucket: "reading-texts",
+        storage_path: data.storagePath,
+        mime_type: "application/pdf",
+        file_size: data.fileSize ?? null,
+      })
+      .select("*")
+      .single<DbReadingText>();
+    throwDb(error, "create reading text");
+    return mapReadingText(requireRow(row, "create reading text"));
+  }
+
+  async listReadingTextsForUser(userId: string): Promise<ReadingText[]> {
+    const { data, error } = await this.db
+      .from("reading_texts")
+      .select("*")
+      .eq("owner_user_id", userId)
+      .order("created_at", { ascending: false });
+    throwDb(error, "list reading texts");
+    return (data ?? []).map((row) => mapReadingText(row as DbReadingText));
+  }
+
+  async getReadingText(textId: string): Promise<ReadingText | undefined> {
+    const { data, error } = await this.db
+      .from("reading_texts")
+      .select("*")
+      .eq("id", textId)
+      .maybeSingle<DbReadingText>();
+    throwDb(error, "get reading text");
+    return data ? mapReadingText(data) : undefined;
+  }
+
+  async createReadingTextSignedUrl(textId: string): Promise<string> {
+    const text = await this.getReadingText(textId);
+    if (!text) throw new Error("reading text not found");
+
+    const { data, error } = await this.db.storage
+      .from(text.storageBucket)
+      .createSignedUrl(text.storagePath, 60 * 60);
+    if (error) throw new Error(`create reading text signed url: ${error.message}`);
+    return data.signedUrl;
+  }
+
   async createRequest(userId: string, data: InsertRequest): Promise<PartnerRequest> {
     const { error: closeError } = await this.db
       .from("requests")
@@ -278,6 +369,7 @@ export class SupabaseStorage implements IStorage {
         id: id(),
         user_id: userId,
         text_title: data.textTitle,
+        text_source_id: data.textSourceId ?? null,
         pace: data.pace,
         commitment: data.commitment,
         schedule_windows: data.scheduleWindows ?? null,
@@ -331,6 +423,7 @@ export class SupabaseStorage implements IStorage {
     userAId: string;
     userBId: string;
     textTitle: string;
+    textSourceId?: string | null;
     pace?: string | null;
     textSource?: string | null;
   }): Promise<Pairing> {
@@ -341,6 +434,7 @@ export class SupabaseStorage implements IStorage {
         user_a_id: args.userAId,
         user_b_id: args.userBId,
         text_title: args.textTitle,
+        text_source_id: args.textSourceId ?? null,
         text_source: args.textSource ?? null,
         pace: args.pace ?? null,
         status: "active",

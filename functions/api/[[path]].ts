@@ -1,10 +1,12 @@
 import { z } from "zod";
-import { createStorage, type IStorage } from "../../server/storage";
+import { createServerSupabaseClient, createStorage, type IStorage } from "../../server/storage";
 import { runMatching } from "../../server/matching";
 import {
   claimEmailSchema,
+  fetchPdfSchema,
   insertRequestSchema,
   profileSchema,
+  type ReadingText,
 } from "../../shared/schema";
 
 type Env = {
@@ -16,6 +18,9 @@ type PagesContext = {
   request: Request;
   env: Env;
 };
+
+const PDF_BUCKET = "reading-texts";
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -45,6 +50,72 @@ async function requireUser(store: IStorage, request: Request) {
     return { user: null, response: json({ message: "Not signed in" }, 401) };
   }
   return { user, response: null };
+}
+
+function cleanTitle(value: unknown, fallback: string): string {
+  const title = typeof value === "string" ? value.trim() : "";
+  return (title || fallback).replace(/\.pdf$/i, "").slice(0, 180);
+}
+
+function titleFromUrl(url: URL): string {
+  const last = url.pathname.split("/").filter(Boolean).pop();
+  if (!last) return url.hostname;
+  try {
+    return decodeURIComponent(last).replace(/[-_]+/g, " ");
+  } catch {
+    return last.replace(/[-_]+/g, " ");
+  }
+}
+
+function isPdfBytes(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 5) return false;
+  const sig = new Uint8Array(buffer.slice(0, 5));
+  return sig[0] === 0x25 && sig[1] === 0x50 && sig[2] === 0x44 && sig[3] === 0x46 && sig[4] === 0x2d;
+}
+
+type SavePdfResult =
+  | { ok: false; response: Response }
+  | { ok: true; text: ReadingText };
+
+async function savePdf({
+  env,
+  store,
+  userId,
+  title,
+  sourceKind,
+  sourceUrl,
+  buffer,
+}: {
+  env: Env;
+  store: IStorage;
+  userId: string;
+  title: string;
+  sourceKind: "upload" | "web_pdf";
+  sourceUrl?: string | null;
+  buffer: ArrayBuffer;
+}): Promise<SavePdfResult> {
+  if (buffer.byteLength > MAX_PDF_BYTES) {
+    return { ok: false, response: json({ message: "PDF must be 50 MB or smaller" }, 400) };
+  }
+  if (!isPdfBytes(buffer)) {
+    return { ok: false, response: json({ message: "That file does not look like a PDF" }, 400) };
+  }
+
+  const storagePath = `${userId}/${crypto.randomUUID()}.pdf`;
+  const { error } = await createServerSupabaseClient(env).storage.from(PDF_BUCKET).upload(storagePath, buffer, {
+    contentType: "application/pdf",
+    upsert: false,
+  });
+  if (error) throw new Error(`upload PDF: ${error.message}`);
+
+  const text = await store.createReadingText(userId, {
+    title,
+    sourceKind,
+    sourceUrl: sourceUrl ?? null,
+    storagePath,
+    fileSize: buffer.byteLength,
+  });
+  return { ok: true, text };
 }
 
 export const onRequest = async ({ request, env }: PagesContext): Promise<Response> => {
@@ -88,6 +159,88 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ user: updated });
     }
 
+    if (request.method === "GET" && path === "/texts") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const texts = await store.listReadingTextsForUser(auth.user.id);
+      return json({ texts });
+    }
+
+    if (request.method === "POST" && path === "/texts/upload") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) return json({ message: "Choose a PDF file" }, 400);
+      if (file.size > MAX_PDF_BYTES) return json({ message: "PDF must be 50 MB or smaller" }, 400);
+      if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+        return json({ message: "Choose a PDF file" }, 400);
+      }
+
+      const saved = await savePdf({
+        env,
+        store,
+        userId: auth.user.id,
+        title: cleanTitle(form.get("title"), file.name || "Uploaded text"),
+        sourceKind: "upload",
+        buffer: await file.arrayBuffer(),
+      });
+      if (!saved.ok) return saved.response;
+      return json({ text: saved.text });
+    }
+
+    if (request.method === "POST" && path === "/texts/fetch") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const parse = fetchPdfSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+
+      const sourceUrl = new URL(parse.data.url);
+      if (sourceUrl.protocol !== "http:" && sourceUrl.protocol !== "https:") {
+        return json({ message: "Enter an http or https PDF URL" }, 400);
+      }
+
+      const fetched = await fetch(sourceUrl.toString(), {
+        headers: { Accept: "application/pdf" },
+      });
+      if (!fetched.ok) return json({ message: `Could not fetch PDF (${fetched.status})` }, 400);
+
+      const contentType = fetched.headers.get("content-type") ?? "";
+      const contentLength = Number(fetched.headers.get("content-length") ?? 0);
+      const urlLooksPdf = sourceUrl.pathname.toLowerCase().endsWith(".pdf");
+      if (!contentType.toLowerCase().includes("pdf") && !urlLooksPdf) {
+        return json({ message: "That URL does not appear to be a direct PDF" }, 400);
+      }
+      if (contentLength > MAX_PDF_BYTES) {
+        return json({ message: "PDF must be 50 MB or smaller" }, 400);
+      }
+
+      const saved = await savePdf({
+        env,
+        store,
+        userId: auth.user.id,
+        title: cleanTitle(parse.data.title, titleFromUrl(sourceUrl)),
+        sourceKind: "web_pdf",
+        sourceUrl: sourceUrl.toString(),
+        buffer: await fetched.arrayBuffer(),
+      });
+      if (!saved.ok) return saved.response;
+      return json({ text: saved.text });
+    }
+
+    if (segments[0] === "texts" && segments[1] && segments[2] === "url" && request.method === "GET") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const text = await store.getReadingText(segments[1]);
+      if (!text || text.ownerUserId !== auth.user.id) return json({ message: "Not found" }, 404);
+      const signedUrl = await store.createReadingTextSignedUrl(text.id);
+      return json({ signedUrl });
+    }
+
     if (request.method === "GET" && path === "/requests/mine") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
@@ -102,6 +255,10 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
       const parse = insertRequestSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+      if (parse.data.textSourceId) {
+        const text = await store.getReadingText(parse.data.textSourceId);
+        if (!text || text.ownerUserId !== auth.user.id) return json({ message: "Text source not found" }, 400);
+      }
 
       const partnerRequest = await store.createRequest(auth.user.id, parse.data);
       await runMatching(store);
@@ -194,7 +351,17 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         const partnerId = pairing.userAId === auth.user.id ? pairing.userBId : pairing.userAId;
         const partner = await store.getUser(partnerId);
         const sessions = await store.getSessionsForPairing(pairing.id);
-        return json({ pairing, partner, sessions });
+        let readingText = null;
+        if (pairing.textSourceId) {
+          const text = await store.getReadingText(pairing.textSourceId);
+          if (text) {
+            readingText = {
+              ...text,
+              signedUrl: await store.createReadingTextSignedUrl(text.id),
+            };
+          }
+        }
+        return json({ pairing, partner, sessions, readingText });
       }
 
       if (segments[2] === "notebook") {

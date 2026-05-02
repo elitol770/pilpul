@@ -45,10 +45,11 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined
 ): Promise<Response> {
+  const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: authHeaders(data ? { "Content-Type": "application/json" } : undefined),
-    body: data ? JSON.stringify(data) : undefined,
+    headers: authHeaders(data && !isFormData ? { "Content-Type": "application/json" } : undefined),
+    body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
   });
   await throwIfResNotOk(res);
   return res;

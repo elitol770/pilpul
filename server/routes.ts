@@ -1,8 +1,9 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "node:http";
-import { getStorage } from "./storage";
+import { createServerSupabaseClient, getStorage } from "./storage";
 import { runMatching } from "./matching";
 import {
+  fetchPdfSchema,
   insertRequestSchema,
   profileSchema,
   claimEmailSchema,
@@ -10,6 +11,8 @@ import {
 import { z } from "zod";
 
 const storage = getStorage();
+const PDF_BUCKET = "reading-texts";
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
 // ---------- Identity ----------
 //
@@ -38,6 +41,51 @@ async function requireUser(req: Request, res: Response, next: NextFunction) {
   } catch (error) {
     next(error);
   }
+}
+
+function cleanTitle(value: unknown, fallback: string): string {
+  const title = typeof value === "string" ? value.trim() : "";
+  return (title || fallback).replace(/\.pdf$/i, "").slice(0, 180);
+}
+
+function titleFromUrl(url: URL): string {
+  const last = url.pathname.split("/").filter(Boolean).pop();
+  if (!last) return url.hostname;
+  try {
+    return decodeURIComponent(last).replace(/[-_]+/g, " ");
+  } catch {
+    return last.replace(/[-_]+/g, " ");
+  }
+}
+
+function isPdfBytes(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 5) return false;
+  const sig = new Uint8Array(buffer.slice(0, 5));
+  return sig[0] === 0x25 && sig[1] === 0x50 && sig[2] === 0x44 && sig[3] === 0x46 && sig[4] === 0x2d;
+}
+
+async function saveFetchedPdf(userId: string, title: string, sourceUrl: string, buffer: ArrayBuffer) {
+  if (buffer.byteLength > MAX_PDF_BYTES) {
+    throw new Error("PDF must be 50 MB or smaller");
+  }
+  if (!isPdfBytes(buffer)) {
+    throw new Error("That file does not look like a PDF");
+  }
+
+  const storagePath = `${userId}/${crypto.randomUUID()}.pdf`;
+  const { error } = await createServerSupabaseClient().storage.from(PDF_BUCKET).upload(storagePath, buffer, {
+    contentType: "application/pdf",
+    upsert: false,
+  });
+  if (error) throw new Error(`upload PDF: ${error.message}`);
+
+  return await storage.createReadingText(userId, {
+    title,
+    sourceKind: "web_pdf",
+    sourceUrl,
+    storagePath,
+    fileSize: buffer.byteLength,
+  });
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -72,6 +120,61 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ user: updated });
   });
 
+  // ---- uploaded/imported texts ----
+  app.get("/api/texts", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const texts = await storage.listReadingTextsForUser(user.id);
+    res.json({ texts });
+  });
+
+  app.post("/api/texts/upload", requireUser, async (_req, res) => {
+    res.status(501).json({
+      message: "Local Express dev does not handle multipart uploads. Use Cloudflare Pages dev for PDF upload testing.",
+    });
+  });
+
+  app.post("/api/texts/fetch", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const parse = fetchPdfSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ message: parse.error.issues[0].message });
+    }
+
+    const sourceUrl = new URL(parse.data.url);
+    if (sourceUrl.protocol !== "http:" && sourceUrl.protocol !== "https:") {
+      return res.status(400).json({ message: "Enter an http or https PDF URL" });
+    }
+
+    const fetched = await fetch(sourceUrl.toString(), { headers: { Accept: "application/pdf" } });
+    if (!fetched.ok) return res.status(400).json({ message: `Could not fetch PDF (${fetched.status})` });
+
+    const contentType = fetched.headers.get("content-type") ?? "";
+    const contentLength = Number(fetched.headers.get("content-length") ?? 0);
+    const urlLooksPdf = sourceUrl.pathname.toLowerCase().endsWith(".pdf");
+    if (!contentType.toLowerCase().includes("pdf") && !urlLooksPdf) {
+      return res.status(400).json({ message: "That URL does not appear to be a direct PDF" });
+    }
+    if (contentLength > MAX_PDF_BYTES) {
+      return res.status(400).json({ message: "PDF must be 50 MB or smaller" });
+    }
+
+    const text = await saveFetchedPdf(
+      user.id,
+      cleanTitle(parse.data.title, titleFromUrl(sourceUrl)),
+      sourceUrl.toString(),
+      await fetched.arrayBuffer()
+    );
+    res.json({ text });
+  });
+
+  app.get("/api/texts/:id/url", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const text = await storage.getReadingText(String(req.params.id));
+    if (!text || text.ownerUserId !== user.id) return res.status(404).json({ message: "Not found" });
+    const signedUrl = await storage.createReadingTextSignedUrl(text.id);
+    res.json({ signedUrl });
+  });
+
   // ---- requests ----
   app.get("/api/requests/mine", requireUser, async (req, res) => {
     const user = (req as any).user;
@@ -84,6 +187,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const parse = insertRequestSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
+    }
+    if (parse.data.textSourceId) {
+      const text = await storage.getReadingText(parse.data.textSourceId);
+      if (!text || text.ownerUserId !== user.id) return res.status(400).json({ message: "Text source not found" });
     }
     const r = await storage.createRequest(user.id, parse.data);
     // Try matching immediately so demo users see fast feedback.
@@ -127,7 +234,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const partnerId = pairing.userAId === user.id ? pairing.userBId : pairing.userAId;
     const partner = await storage.getUser(partnerId);
     const sessions = await storage.getSessionsForPairing(pairing.id);
-    res.json({ pairing, partner, sessions });
+    let readingText = null;
+    if (pairing.textSourceId) {
+      const text = await storage.getReadingText(pairing.textSourceId);
+      if (text) {
+        readingText = {
+          ...text,
+          signedUrl: await storage.createReadingTextSignedUrl(text.id),
+        };
+      }
+    }
+    res.json({ pairing, partner, sessions, readingText });
   });
 
   // Notebook polling endpoint — light-weight pseudo-realtime.
