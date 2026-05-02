@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createServerSupabaseClient, createStorage, type IStorage } from "../../server/storage";
 import { runMatching } from "../../server/matching";
+import { parseAvailability } from "../../shared/availability";
 import {
   cleanTitle,
   fetchPdfFromWeb,
@@ -227,6 +228,9 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
       const parse = insertRequestSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+      if (!parseAvailability(parse.data.scheduleWindows)) {
+        return json({ message: "Choose at least one weekly meeting time" }, 400);
+      }
       if (parse.data.textSourceId) {
         const text = await store.getReadingText(parse.data.textSourceId);
         if (!text || text.ownerUserId !== auth.user.id) return json({ message: "Text source not found" }, 400);
@@ -296,14 +300,20 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         textTitle: text,
         pace,
         commitment,
-        scheduleWindows: "Weekday evenings",
+        scheduleWindows: JSON.stringify({
+          timezone: "UTC",
+          windows: [{ day: 1, start: "19:00", end: "21:00" }],
+        }),
         language: "English",
       });
       await store.createRequest(auth.user.id, {
         textTitle: text,
         pace,
         commitment,
-        scheduleWindows: "Weekday evenings",
+        scheduleWindows: JSON.stringify({
+          timezone: "UTC",
+          windows: [{ day: 1, start: "19:00", end: "21:00" }],
+        }),
         language: "English",
       });
       await runMatching(store);

@@ -133,7 +133,7 @@ function WaitingCard() {
       <span className="smallcaps">in the queue</span>
       <p className="font-serif italic text-xl mt-1">looking for someone</p>
       <p className="text-muted-foreground mt-2">
-        We'll email you when there is something to do. You don't need to come back.
+        Your request is open. Check back later, or leave the queue open while matching runs.
       </p>
       <div className="rule my-5" />
       <Link

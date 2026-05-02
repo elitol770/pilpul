@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { PageShell } from "@/components/page-shell";
 import { useEffect } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { formatAvailabilitySummary } from "@shared/availability";
 
 export default function Queue() {
   const [, setLocation] = useLocation();
@@ -63,18 +64,18 @@ export default function Queue() {
         <p className="font-serif italic leading-relaxed max-w-md mx-auto" data-testid="text-queue-summary">
           Looking for someone who wants to read{" "}
           <span className="text-foreground">{r.textTitle}</span> at a {r.pace} pace
-          {r.scheduleWindows ? `, ${r.scheduleWindows.toLowerCase()}` : ""}.
+          {r.scheduleWindows ? `, ${formatAvailabilitySummary(r.scheduleWindows)}` : ""}.
         </p>
         <div className="rule mt-10 mb-6" />
         <p className="text-xs text-muted-foreground italic max-w-sm mx-auto">
-          You don't need to come back to this page. We'll email you when there is something to do.
+          Your place is held. Check back later after you close this page.
         </p>
         <Link
           href="/"
           className="inline-block mt-6 px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic"
           data-testid="button-close"
         >
-          close — we'll email you
+          close
         </Link>
       </div>
       <style>{`@keyframes pulse { 0%,100% { opacity:.4; transform:scale(1) } 50% { opacity:1; transform:scale(1.2) } }`}</style>

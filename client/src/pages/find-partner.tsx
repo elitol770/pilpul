@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { Plus, X } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ReadingText } from "@shared/schema";
+import { DAYS, encodeAvailability, type AvailabilityWindow } from "@shared/availability";
 
 const PACES = [
   { value: "slow", label: "slow", desc: "~10 pp/wk" },
@@ -16,12 +18,24 @@ const COMMITMENTS = [
   { value: "serious", label: "serious", desc: "I want to finish this" },
 ] as const;
 
+type WindowDraft = AvailabilityWindow & { id: string };
+
+function newWindow(day = 1): WindowDraft {
+  return {
+    id: crypto.randomUUID(),
+    day,
+    start: "19:00",
+    end: "20:30",
+  };
+}
+
 export default function FindPartner() {
   const [, setLocation] = useLocation();
   const [textTitle, setTextTitle] = useState("");
   const [pace, setPace] = useState<"slow" | "medium" | "fast">("medium");
   const [commitment, setCommitment] = useState<"casual" | "serious">("serious");
-  const [scheduleWindows, setSchedule] = useState("");
+  const [availability, setAvailability] = useState<WindowDraft[]>(() => [newWindow()]);
+  const [timezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [language, setLanguage] = useState("English");
   const [err, setErr] = useState<string | null>(null);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
@@ -88,6 +102,7 @@ export default function FindPartner() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const windows = availability.map(({ id: _id, ...window }) => window);
     setBusy(true);
     setErr(null);
     try {
@@ -96,7 +111,7 @@ export default function FindPartner() {
         textSourceId: selectedTextId,
         pace,
         commitment,
-        scheduleWindows,
+        scheduleWindows: encodeAvailability({ timezone, windows }),
         language,
       });
       await queryClient.invalidateQueries({ queryKey: ["/api/requests/mine"] });
@@ -108,6 +123,13 @@ export default function FindPartner() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function addAvailabilityWindow() {
+    setAvailability((current) => {
+      const lastDay = current[current.length - 1]?.day ?? 0;
+      return [...current, newWindow(lastDay + 1 > 6 ? 0 : lastDay + 1)];
+    });
   }
 
   return (
@@ -271,13 +293,81 @@ export default function FindPartner() {
 
           <div>
             <label className="smallcaps block mb-2">when can you meet?</label>
-            <input
-              data-testid="input-schedule"
-              value={scheduleWindows}
-              onChange={(e) => setSchedule(e.target.value)}
-              placeholder="e.g. Weekday evenings, GMT-7"
-              className="w-full bg-card border border-border rounded-sm px-3 py-2 outline-none focus:border-primary"
-            />
+            <div className="space-y-3">
+              {availability.map((window) => (
+                <div key={window.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                  <select
+                    value={window.day}
+                    onChange={(e) =>
+                      setAvailability((current) =>
+                        current.map((item) =>
+                          item.id === window.id ? { ...item, day: Number(e.target.value) } : item
+                        )
+                      )
+                    }
+                    data-testid={`select-day-${window.id}`}
+                    className="min-w-0 bg-card border border-border rounded-sm px-2 py-2 outline-none focus:border-primary text-sm"
+                  >
+                    {DAYS.map((day) => (
+                      <option key={day.value} value={day.value}>
+                        {day.short}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={window.start}
+                    onChange={(e) =>
+                      setAvailability((current) =>
+                        current.map((item) =>
+                          item.id === window.id ? { ...item, start: e.target.value } : item
+                        )
+                      )
+                    }
+                    data-testid={`input-start-${window.id}`}
+                    className="min-w-0 bg-card border border-border rounded-sm px-2 py-2 outline-none focus:border-primary text-sm tabular"
+                  />
+                  <input
+                    type="time"
+                    value={window.end}
+                    onChange={(e) =>
+                      setAvailability((current) =>
+                        current.map((item) =>
+                          item.id === window.id ? { ...item, end: e.target.value } : item
+                        )
+                      )
+                    }
+                    data-testid={`input-end-${window.id}`}
+                    className="min-w-0 bg-card border border-border rounded-sm px-2 py-2 outline-none focus:border-primary text-sm tabular"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Remove time"
+                    onClick={() =>
+                      setAvailability((current) =>
+                        current.length === 1 ? current : current.filter((item) => item.id !== window.id)
+                      )
+                    }
+                    disabled={availability.length === 1}
+                    className="h-10 w-10 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate disabled:opacity-40"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={addAvailabilityWindow}
+                disabled={availability.length >= 14}
+                className="inline-flex items-center gap-2 text-sm underline underline-offset-4 disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" />
+                add a time
+              </button>
+              <span className="text-xs text-muted-foreground tabular">{timezone}</span>
+            </div>
           </div>
 
           <div>

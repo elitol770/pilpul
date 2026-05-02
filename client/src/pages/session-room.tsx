@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink, Mic, Video, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { findText } from "@/lib/texts";
 import { useAuth } from "@/lib/auth";
@@ -433,29 +434,69 @@ function SessionTimer() {
 // -----------------------------------------------------------------------------
 
 function JitsiStrip({ pairingId }: { pairingId: string }) {
-  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"voice" | "video" | null>(null);
   const room = `pilpul-${pairingId}`;
+  const roomUrl = `https://meet.jit.si/${encodeURIComponent(room)}`;
+  const iframeUrl =
+    mode === "voice"
+      ? `${roomUrl}#config.startAudioOnly=true&config.startWithVideoMuted=true&config.prejoinPageEnabled=false`
+      : `${roomUrl}#config.startWithVideoMuted=false&config.prejoinPageEnabled=false`;
+
   return (
     <div className="border-t border-border bg-background">
-      <div className="px-6 py-2 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground italic">
-          Audio room: {room}
-        </span>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          data-testid="button-toggle-jitsi"
-          className="px-3 py-1 border border-border rounded-sm hover-elevate"
-        >
-          {open ? "close audio" : "open audio"}
-        </button>
+      <div className="px-6 py-2 flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground italic truncate">room: {room}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMode("voice")}
+            data-testid="button-open-voice"
+            className={
+              "h-8 w-8 inline-flex items-center justify-center border rounded-sm hover-elevate " +
+              (mode === "voice" ? "border-foreground" : "border-border")
+            }
+            aria-label="Open voice"
+          >
+            <Mic className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setMode("video")}
+            data-testid="button-open-video"
+            className={
+              "h-8 w-8 inline-flex items-center justify-center border rounded-sm hover-elevate " +
+              (mode === "video" ? "border-foreground" : "border-border")
+            }
+            aria-label="Open video"
+          >
+            <Video className="h-4 w-4" />
+          </button>
+          <a
+            href={roomUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm hover-elevate"
+            aria-label="Open call in new tab"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+          {mode && (
+            <button
+              onClick={() => setMode(null)}
+              data-testid="button-close-call"
+              className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm hover-elevate"
+              aria-label="Close call"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
-      {open && (
+      {mode && (
         <iframe
-          title="Audio room"
-          src={`https://meet.jit.si/${encodeURIComponent(room)}#config.startWithVideoMuted=true&config.prejoinPageEnabled=false`}
+          title="Study room call"
+          src={iframeUrl}
           allow="camera; microphone; fullscreen; display-capture; autoplay"
           className="w-full"
-          style={{ height: 280, border: "none" }}
+          style={{ height: 360, border: "none" }}
         />
       )}
     </div>

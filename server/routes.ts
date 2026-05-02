@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "node:http";
 import { createServerSupabaseClient, getStorage } from "./storage";
 import { runMatching } from "./matching";
+import { parseAvailability } from "@shared/availability";
 import {
   cleanTitle,
   fetchPdfFromWeb,
@@ -163,6 +164,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
     }
+    if (!parseAvailability(parse.data.scheduleWindows)) {
+      return res.status(400).json({ message: "Choose at least one weekly meeting time" });
+    }
     if (parse.data.textSourceId) {
       const text = await storage.getReadingText(parse.data.textSourceId);
       if (!text || text.ownerUserId !== user.id) return res.status(400).json({ message: "Text source not found" });
@@ -291,14 +295,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       textTitle: text,
       pace: req.body?.pace || "medium",
       commitment: req.body?.commitment || "serious",
-      scheduleWindows: "Weekday evenings",
+      scheduleWindows: JSON.stringify({
+        timezone: "UTC",
+        windows: [{ day: 1, start: "19:00", end: "21:00" }],
+      }),
       language: "English",
     });
     await storage.createRequest(user.id, {
       textTitle: text,
       pace: req.body?.pace || "medium",
       commitment: req.body?.commitment || "serious",
-      scheduleWindows: "Weekday evenings",
+      scheduleWindows: JSON.stringify({
+        timezone: "UTC",
+        windows: [{ day: 1, start: "19:00", end: "21:00" }],
+      }),
       language: "English",
     });
     await runMatching();

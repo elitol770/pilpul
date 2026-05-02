@@ -1,8 +1,27 @@
 import { getStorage, type IStorage } from "./storage";
 import type { Request as PartnerRequest } from "@shared/schema";
+import { hasScheduleOverlap } from "@shared/availability";
+
+function languageSet(value: string | null | undefined): Set<string> {
+  return new Set(
+    (value || "English")
+      .toLowerCase()
+      .split(/[,;/]|\band\b/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+}
+
+function languagesCompatible(a: string | null | undefined, b: string | null | undefined): boolean {
+  const aSet = languageSet(a);
+  const bSet = languageSet(b);
+  return Array.from(aSet).some((language) => bSet.has(language));
+}
 
 // Greedy matcher. Pairs users on:
 //   - same commitment level (hard requirement)
+//   - compatible conversation language (hard requirement)
+//   - at least one weekly schedule overlap of 90+ minutes (hard requirement)
 //   - text affinity (same exact title scores highest)
 //   - same pace bracket (preferred, not required)
 // Returns the number of pairings created.
@@ -26,6 +45,12 @@ export async function runMatching(store?: IStorage): Promise<number> {
       // Hard: commitment must match (the most important variable per spec)
       if (a.commitment !== b.commitment) continue;
 
+      // Hard: they need at least one shared language for the conversation.
+      if (!languagesCompatible(a.language, b.language)) continue;
+
+      // Hard: at least one shared weekly window long enough to study.
+      if (!hasScheduleOverlap(a.scheduleWindows, b.scheduleWindows)) continue;
+
       let score = 0;
       const at = a.textTitle.trim().toLowerCase();
       const bt = b.textTitle.trim().toLowerCase();
@@ -46,9 +71,6 @@ export async function runMatching(store?: IStorage): Promise<number> {
       // If both people picked the same uploaded/imported PDF, that is the
       // strongest signal that they are asking for the same concrete text.
       if (a.textSourceId && a.textSourceId === b.textSourceId) score += 120;
-
-      // Language overlap
-      if ((a.language ?? "").toLowerCase() === (b.language ?? "").toLowerCase()) score += 5;
 
       if (!best || score > best.score) best = { req: b, score };
     }
