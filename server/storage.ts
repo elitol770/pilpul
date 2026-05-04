@@ -1,9 +1,11 @@
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   CreateReadingText,
+  CreateReport,
   InsertRequest,
   Pairing,
   ReadingText,
+  Report,
   Request as PartnerRequest,
   StudySession,
   User,
@@ -68,6 +70,17 @@ type DbReadingText = {
   storage_path: string;
   mime_type: string;
   file_size: number | null;
+  created_at: string;
+};
+
+type DbReport = {
+  id: string;
+  reporter_id: string;
+  reported_id: string;
+  pairing_id: string;
+  reason: string;
+  details: string | null;
+  status: "open" | "reviewed" | "dismissed" | "actioned";
   created_at: string;
 };
 
@@ -185,6 +198,19 @@ function mapSession(row: DbSession): StudySession {
   };
 }
 
+function mapReport(row: DbReport): Report {
+  return {
+    id: row.id,
+    reporterId: row.reporter_id,
+    reportedId: row.reported_id,
+    pairingId: row.pairing_id,
+    reason: row.reason,
+    details: row.details,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -206,7 +232,9 @@ export interface IStorage {
   getOpenRequests(): Promise<PartnerRequest[]>;
   getUserOpenRequest(userId: string): Promise<PartnerRequest | undefined>;
   closeRequest(id: string): Promise<void>;
+  closeUserOpenRequest(userId: string): Promise<void>;
   countOpenRequests(): Promise<number>;
+  getSuspendedUserIds(): Promise<Set<string>>;
 
   createPairing(args: {
     userAId: string;
@@ -223,6 +251,8 @@ export interface IStorage {
   endPairing(id: string, status: "completed" | "dissolved"): Promise<void>;
   countActivePairings(): Promise<number>;
   countCompletedThisWeek(): Promise<number>;
+
+  createReport(reporterId: string, pairingId: string, data: CreateReport): Promise<Report>;
 
   createSession(pairingId: string, scheduledAt?: string): Promise<StudySession>;
   endSession(id: string, recap: string): Promise<StudySession | undefined>;
@@ -410,6 +440,15 @@ export class SupabaseStorage implements IStorage {
     throwDb(error, "close request");
   }
 
+  async closeUserOpenRequest(userId: string): Promise<void> {
+    const { error } = await this.db
+      .from("requests")
+      .update({ status: "closed" })
+      .eq("user_id", userId)
+      .eq("status", "open");
+    throwDb(error, "close user open request");
+  }
+
   async countOpenRequests(): Promise<number> {
     const { count, error } = await this.db
       .from("requests")
@@ -417,6 +456,15 @@ export class SupabaseStorage implements IStorage {
       .eq("status", "open");
     throwDb(error, "count open requests");
     return count ?? 0;
+  }
+
+  async getSuspendedUserIds(): Promise<Set<string>> {
+    const { data, error } = await this.db
+      .from("users")
+      .select("id")
+      .not("matching_suspended_at", "is", null);
+    throwDb(error, "get suspended users");
+    return new Set((data ?? []).map((row) => String((row as { id: string }).id)));
   }
 
   async createPairing(args: {
@@ -509,6 +557,44 @@ export class SupabaseStorage implements IStorage {
       .gte("ended_at", since);
     throwDb(error, "count completed pairings");
     return count ?? 0;
+  }
+
+  async createReport(reporterId: string, pairingId: string, data: CreateReport): Promise<Report> {
+    const pairing = await this.getPairing(pairingId);
+    if (!pairing || (pairing.userAId !== reporterId && pairing.userBId !== reporterId)) {
+      throw new Error("pairing not found");
+    }
+    const reportedId = pairing.userAId === reporterId ? pairing.userBId : pairing.userAId;
+
+    const { data: row, error } = await this.db
+      .from("reports")
+      .insert({
+        id: id(),
+        reporter_id: reporterId,
+        reported_id: reportedId,
+        pairing_id: pairingId,
+        reason: data.reason,
+        details: data.details ?? null,
+        status: "open",
+      })
+      .select("*")
+      .single<DbReport>();
+    throwDb(error, "create report");
+
+    const { error: suspendError } = await this.db
+      .from("users")
+      .update({ matching_suspended_at: nowIso() })
+      .eq("id", reportedId);
+    throwDb(suspendError, "suspend reported user");
+
+    const { error: closeError } = await this.db
+      .from("requests")
+      .update({ status: "closed" })
+      .eq("user_id", reportedId)
+      .eq("status", "open");
+    throwDb(closeError, "close reported user's open requests");
+
+    return mapReport(requireRow(row, "create report"));
   }
 
   async createSession(pairingId: string, scheduledAt?: string): Promise<StudySession> {

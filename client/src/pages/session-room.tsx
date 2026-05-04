@@ -505,15 +505,46 @@ function JitsiStrip({ pairingId }: { pairingId: string }) {
 
 // -----------------------------------------------------------------------------
 
+const REPORT_REASONS = [
+  "Did not show up",
+  "Harassment or abuse",
+  "Spam or bad-faith use",
+  "Unsafe behavior",
+  "Other",
+];
+
 function EndButton({ pairingId }: { pairingId: string }) {
   const [confirming, setConfirming] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reason, setReason] = useState(REPORT_REASONS[0]);
+  const [details, setDetails] = useState("");
+  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function end(status: "completed" | "dissolved") {
     setBusy(true);
+    setErr(null);
     try {
       await apiRequest("POST", `/api/pairings/${pairingId}/end`, { status });
       window.location.hash = "#/";
+    } catch (e: any) {
+      setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not end pairing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function report() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiRequest("POST", `/api/pairings/${pairingId}/report`, {
+        reason,
+        details: details.trim() || null,
+      });
+      window.location.hash = "#/";
+    } catch (e: any) {
+      setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not submit report");
     } finally {
       setBusy(false);
     }
@@ -528,6 +559,52 @@ function EndButton({ pairingId }: { pairingId: string }) {
       >
         end session
       </button>
+    );
+  }
+
+  if (reporting) {
+    return (
+      <div className="absolute right-4 top-12 z-10 w-[min(92vw,360px)] border border-border bg-card p-4 text-xs">
+        <span className="smallcaps">report partner</span>
+        <select
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="mt-3 w-full bg-background border border-border rounded-sm px-2 py-2 outline-none"
+          data-testid="select-report-reason"
+        >
+          {REPORT_REASONS.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <textarea
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+          placeholder="Optional details"
+          className="mt-3 w-full h-24 bg-background border border-border rounded-sm px-2 py-2 outline-none resize-none"
+          data-testid="textarea-report-details"
+        />
+        {err && <p className="text-destructive mt-2">{err}</p>}
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            onClick={() => setReporting(false)}
+            disabled={busy}
+            className="text-muted-foreground"
+            data-testid="button-report-back"
+          >
+            back
+          </button>
+          <button
+            onClick={report}
+            disabled={busy}
+            data-testid="button-submit-report"
+            className="px-3 py-1 border border-border rounded-sm hover-elevate"
+          >
+            {busy ? "sending…" : "report and leave"}
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -550,12 +627,21 @@ function EndButton({ pairingId }: { pairingId: string }) {
         end pairing
       </button>
       <button
+        onClick={() => setReporting(true)}
+        disabled={busy}
+        data-testid="button-report"
+        className="px-3 py-1 border border-border rounded-sm hover-elevate"
+      >
+        report
+      </button>
+      <button
         onClick={() => setConfirming(false)}
         className="text-muted-foreground"
         data-testid="button-end-cancel"
       >
         cancel
       </button>
+      {err && <span className="text-destructive">{err}</span>}
     </div>
   );
 }

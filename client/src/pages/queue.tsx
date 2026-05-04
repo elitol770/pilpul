@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { PageShell } from "@/components/page-shell";
-import { useEffect } from "react";
-import { queryClient } from "@/lib/queryClient";
+import { useEffect, useState } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatAvailabilitySummary } from "@shared/availability";
 
 export default function Queue() {
   const [, setLocation] = useLocation();
+  const [closing, setClosing] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const { data: mine } = useQuery<{
     request: {
       id: string;
@@ -51,6 +53,22 @@ export default function Queue() {
   }
 
   const r = mine.request;
+
+  async function closeRequest() {
+    setClosing(true);
+    setErr(null);
+    try {
+      await apiRequest("POST", "/api/requests/mine/close", {});
+      await queryClient.invalidateQueries({ queryKey: ["/api/requests/mine"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/hum"] });
+      setLocation("/");
+    } catch (e: any) {
+      setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not close request");
+    } finally {
+      setClosing(false);
+    }
+  }
+
   return (
     <PageShell narrow>
       <div className="pt-8 text-center">
@@ -70,13 +88,25 @@ export default function Queue() {
         <p className="text-xs text-muted-foreground italic max-w-sm mx-auto">
           Your place is held. Check back later after you close this page.
         </p>
-        <Link
-          href="/"
-          className="inline-block mt-6 px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic"
-          data-testid="button-close"
-        >
-          close
-        </Link>
+        {err && <p className="text-destructive text-sm mt-4">{err}</p>}
+        <div className="mt-6 flex items-center justify-center gap-4">
+          <Link
+            href="/"
+            className="inline-block px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic"
+            data-testid="button-close"
+          >
+            close
+          </Link>
+          <button
+            type="button"
+            onClick={closeRequest}
+            disabled={closing}
+            className="text-xs text-muted-foreground underline underline-offset-4 disabled:opacity-50"
+            data-testid="button-cancel-request"
+          >
+            {closing ? "leaving…" : "leave the queue"}
+          </button>
+        </div>
       </div>
       <style>{`@keyframes pulse { 0%,100% { opacity:.4; transform:scale(1) } 50% { opacity:1; transform:scale(1.2) } }`}</style>
     </PageShell>

@@ -62,6 +62,17 @@ export type ReadingText = {
   createdAt: string;
 };
 
+export type Report = {
+  id: string;
+  reporterId: string;
+  reportedId: string;
+  pairingId: string;
+  reason: string;
+  details: string | null;
+  status: "open" | "reviewed" | "dismissed" | "actioned";
+  createdAt: string;
+};
+
 export const insertUserSchema = z.object({
   email: z.string().email("Enter a valid email"),
   firstName: z.string().max(40).nullable().optional(),
@@ -108,3 +119,9 @@ export const fetchPdfSchema = z.object({
   url: z.string().url("Enter a PDF URL or a page with a PDF link"),
   title: z.string().max(180).optional(),
 });
+
+export const createReportSchema = z.object({
+  reason: z.string().min(1, "Choose a reason").max(80),
+  details: z.string().max(1000).nullable().optional(),
+});
+export type CreateReport = z.infer<typeof createReportSchema>;

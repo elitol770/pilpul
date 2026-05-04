@@ -12,6 +12,7 @@ import {
   PDF_BUCKET,
 } from "./pdf";
 import {
+  createReportSchema,
   fetchPdfSchema,
   insertRequestSchema,
   profileSchema,
@@ -158,6 +159,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ request: open });
   });
 
+  app.post("/api/requests/mine/close", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    await storage.closeUserOpenRequest(user.id);
+    res.json({ ok: true });
+  });
+
   app.post("/api/requests", requireUser, async (req, res) => {
     const user = (req as any).user;
     const parse = insertRequestSchema.safeParse(req.body);
@@ -267,6 +274,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const status = req.body?.status === "completed" ? "completed" : "dissolved";
     await storage.endPairing(pairing.id, status);
     res.json({ ok: true });
+  });
+
+  app.post("/api/pairings/:id/report", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const pid = String(req.params.id);
+    const pairing = await storage.getPairing(pid);
+    if (!pairing || (pairing.userAId !== user.id && pairing.userBId !== user.id)) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    const parse = createReportSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ message: parse.error.issues[0].message });
+    const report = await storage.createReport(user.id, pairing.id, parse.data);
+    await storage.endPairing(pairing.id, "dissolved");
+    res.json({ report });
   });
 
   // ---- ambient hum (anonymous activity counts) ----

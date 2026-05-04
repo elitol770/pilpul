@@ -28,6 +28,7 @@ function languagesCompatible(a: string | null | undefined, b: string | null | un
 export async function runMatching(store?: IStorage): Promise<number> {
   store ??= getStorage();
   const open = await store.getOpenRequests();
+  const suspendedUserIds = await store.getSuspendedUserIds();
   const taken = new Set<string>();
   let created = 0;
 
@@ -36,11 +37,13 @@ export async function runMatching(store?: IStorage): Promise<number> {
 
   for (const a of open) {
     if (taken.has(a.id)) continue;
+    if (suspendedUserIds.has(a.userId)) continue;
 
     let best: { req: PartnerRequest; score: number } | null = null;
     for (const b of open) {
       if (b.id === a.id || taken.has(b.id)) continue;
       if (a.userId === b.userId) continue;
+      if (suspendedUserIds.has(b.userId)) continue;
 
       // Hard: commitment must match (the most important variable per spec)
       if (a.commitment !== b.commitment) continue;

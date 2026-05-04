@@ -12,6 +12,7 @@ import {
 } from "../../server/pdf";
 import {
   claimEmailSchema,
+  createReportSchema,
   fetchPdfSchema,
   insertRequestSchema,
   profileSchema,
@@ -222,6 +223,14 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ request: open });
     }
 
+    if (request.method === "POST" && path === "/requests/mine/close") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      await store.closeUserOpenRequest(auth.user.id);
+      return json({ ok: true });
+    }
+
     if (request.method === "POST" && path === "/requests") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
@@ -370,6 +379,14 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         const status = body.status === "completed" ? "completed" : "dissolved";
         await store.endPairing(pairing.id, status);
         return json({ ok: true });
+      }
+
+      if (request.method === "POST" && segments[2] === "report") {
+        const parse = createReportSchema.safeParse(await readJson(request));
+        if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+        const report = await store.createReport(auth.user.id, pairing.id, parse.data);
+        await store.endPairing(pairing.id, "dissolved");
+        return json({ report });
       }
     }
 
