@@ -46,7 +46,7 @@ export default function SessionRoom() {
   const title = data.readingText?.title ?? text.title;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background">
       {/* Top bar */}
       <header className="px-6 py-3 border-b border-border flex items-center justify-between gap-4">
         <div className="flex items-baseline gap-3 min-w-0">
@@ -96,11 +96,11 @@ export default function SessionRoom() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 md:overflow-hidden">
         {/* Text panel */}
         <section
           className={
-            "md:flex-1 md:border-r border-border md:overflow-y-auto " +
+            "md:flex-1 min-h-0 md:border-r border-border md:overflow-y-auto " +
             (tab === "text" ? "block" : "hidden md:block")
           }
         >
@@ -133,7 +133,7 @@ export default function SessionRoom() {
         {/* Notebook + Jitsi + AI */}
         <section
           className={
-            "md:flex-1 flex flex-col md:overflow-hidden " +
+            "md:flex-1 min-h-0 flex flex-col md:overflow-hidden " +
             (tab === "notebook" ? "block" : "hidden md:flex")
           }
         >
@@ -271,7 +271,7 @@ function Notebook({
 
   const placeholder = useMemo(
     () =>
-      "Write together. Highlight a passage in the text and bring it here as a quote. Mark questions you want the AI to step in on later.",
+      "Write together. Paste quotes from the text, mark live questions, and keep the thread of what you decided.",
     []
   );
 
@@ -308,7 +308,6 @@ function AiSeat({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<string | null>(null);
   const [costUsd, setCostUsd] = useState<number | null>(null);
-  const [apiKey, setApiKey] = useState<string>("");
 
   function ask() {
     setBusy(true);
@@ -360,19 +359,9 @@ function AiSeat({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="px-6 pb-4">
-        {!apiKey && (
-          <div className="text-xs text-muted-foreground italic mb-2">
-            Bring your own Anthropic API key. Stored only in this browser session.{" "}
-            <input
-              type="password"
-              placeholder="sk-ant-… (optional, simulation runs without)"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              data-testid="input-api-key"
-              className="ml-1 bg-background border border-border rounded-sm px-2 py-1 w-56 outline-none font-mono text-[10px]"
-            />
-          </div>
-        )}
+        <p className="text-xs text-muted-foreground italic mb-2">
+          Prototype simulation. BYOK billing is not connected yet.
+        </p>
         <div className="flex gap-2">
           <input
             value={prompt}
@@ -564,7 +553,7 @@ function EndButton({ pairingId }: { pairingId: string }) {
 
   if (reporting) {
     return (
-      <div className="absolute right-4 top-12 z-10 w-[min(92vw,360px)] border border-border bg-card p-4 text-xs">
+      <div className="fixed right-4 top-14 z-10 w-[min(92vw,360px)] border border-border bg-card p-4 text-xs">
         <span className="smallcaps">report partner</span>
         <select
           value={reason}

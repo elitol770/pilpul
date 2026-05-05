@@ -33,7 +33,8 @@ export default function Home() {
   const { data: hum } = useQuery<Hum>({ queryKey: ["/api/hum"] });
   const [seeding, setSeeding] = useState(false);
 
-  const needsProfile = user && (!user.firstName || !user.city);
+  const needsProfile = user && (!user.firstName || !user.city || !user.ageConfirmed);
+  const matchingSuspended = !!user?.matchingSuspendedAt;
 
   async function seedDemo() {
     setSeeding(true);
@@ -49,9 +50,11 @@ export default function Home() {
 
   return (
     <PageShell narrow>
-      {needsProfile && <ProfileForm />}
-
-      {active?.pairing ? (
+      {matchingSuspended ? (
+        <PausedCard />
+      ) : needsProfile ? (
+        <ProfileForm />
+      ) : active?.pairing ? (
         <ActiveCard pairing={active.pairing} partner={active.partner} />
       ) : queueMine?.request ? (
         <WaitingCard />
@@ -59,24 +62,26 @@ export default function Home() {
         <EmptyCard onSeedDemo={seedDemo} seeding={seeding} />
       )}
 
-      <div className="mt-10 grid grid-cols-2 gap-4">
-        <Link
-          href="/find"
-          className="block border border-border bg-card rounded-sm p-4 hover-elevate"
-          data-testid="link-find-another"
-        >
-          <span className="smallcaps">Find</span>
-          <p className="font-serif italic mt-1">another partner</p>
-        </Link>
-        <Link
-          href="/notebook"
-          className="block border border-border bg-card rounded-sm p-4 hover-elevate"
-          data-testid="link-notebook"
-        >
-          <span className="smallcaps">Read</span>
-          <p className="font-serif italic mt-1">your notebook</p>
-        </Link>
-      </div>
+      {!matchingSuspended && !needsProfile && (
+        <div className="mt-10 grid grid-cols-2 gap-4">
+          <Link
+            href="/find"
+            className="block border border-border bg-card rounded-sm p-4 hover-elevate"
+            data-testid="link-find-another"
+          >
+            <span className="smallcaps">Find</span>
+            <p className="font-serif italic mt-1">another partner</p>
+          </Link>
+          <Link
+            href="/notebook"
+            className="block border border-border bg-card rounded-sm p-4 hover-elevate"
+            data-testid="link-notebook"
+          >
+            <span className="smallcaps">Read</span>
+            <p className="font-serif italic mt-1">your notebook</p>
+          </Link>
+        </div>
+      )}
 
       {hum && (
         <p
@@ -89,6 +94,21 @@ export default function Home() {
         </p>
       )}
     </PageShell>
+  );
+}
+
+function PausedCard() {
+  return (
+    <div className="border border-border bg-card rounded-sm p-6 mt-4" data-testid="card-matching-paused">
+      <span className="smallcaps">matching paused</span>
+      <p className="font-serif italic text-xl mt-1">This account is out of the queue.</p>
+      <p className="text-muted-foreground mt-2">
+        A report needs maintainer review before this account can be matched again.
+      </p>
+      <Link href="/notebook" className="inline-block mt-5 text-sm underline underline-offset-4">
+        open your notebook
+      </Link>
+    </div>
   );
 }
 

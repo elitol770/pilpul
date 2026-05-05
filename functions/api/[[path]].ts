@@ -17,6 +17,7 @@ import {
   insertRequestSchema,
   profileSchema,
   type ReadingText,
+  type User,
 } from "../../shared/schema";
 
 type Env = {
@@ -57,6 +58,16 @@ async function requireUser(store: IStorage, request: Request) {
     return { user: null, response: json({ message: "Not signed in" }, 401) };
   }
   return { user, response: null };
+}
+
+function requireMatchingReady(user: User): Response | null {
+  if (user.matchingSuspendedAt) {
+    return json({ message: "Matching is paused for this account." }, 403);
+  }
+  if (!user.firstName || !user.city || !user.ageConfirmed) {
+    return json({ message: "Complete your profile before entering the queue." }, 403);
+  }
+  return null;
 }
 
 type SavePdfResult =
@@ -234,6 +245,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/requests") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
 
       const parse = insertRequestSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
@@ -291,6 +304,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/demo/seed-partner") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
 
       const body = (await readJson(request)) as Record<string, unknown>;
       const partnerEmail = `demo-${Date.now()}@pilpul.local`;

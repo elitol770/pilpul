@@ -15,8 +15,8 @@ const FALLBACK: TextEntry = {
   passages: [
     {
       label: "A note from the maintainer",
-      html: `<p>This is a demo passage. In production, this panel renders the actual text of the work the pair is studying — Sefaria for Jewish texts, Project Gutenberg for public domain works, an in-app reader for user-uploaded EPUBs and PDFs, and reader-mode for article URLs.</p>
-<p>Highlight any sentence and a small popover lets you anchor a note to it, ask the AI about it, or share it to the shared notebook.</p>`,
+      html: `<p>This sample room is using a demo passage because no PDF was attached to the pairing.</p>
+<p>For a real pairing, upload a private PDF or import a web page that links to a PDF when you enter the queue. The room will render that PDF beside the shared notebook.</p>`,
     },
   ],
 };

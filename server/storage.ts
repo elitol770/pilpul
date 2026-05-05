@@ -18,6 +18,7 @@ type DbUser = {
   city: string | null;
   timezone: string | null;
   age_confirmed: boolean;
+  matching_suspended_at: string | null;
   created_at: string;
 };
 
@@ -134,6 +135,7 @@ function mapUser(row: DbUser): User {
     city: row.city,
     timezone: row.timezone,
     ageConfirmed: row.age_confirmed,
+    matchingSuspendedAt: row.matching_suspended_at,
     createdAt: row.created_at,
   };
 }

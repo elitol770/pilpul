@@ -7,6 +7,7 @@ export type User = {
   city: string | null;
   timezone: string | null;
   ageConfirmed: boolean;
+  matchingSuspendedAt: string | null;
   createdAt: string;
 };
 

@@ -17,6 +17,7 @@ import {
   insertRequestSchema,
   profileSchema,
   claimEmailSchema,
+  type User,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -49,6 +50,18 @@ async function requireUser(req: Request, res: Response, next: NextFunction) {
   } catch (error) {
     next(error);
   }
+}
+
+function requireMatchingReady(user: User, res: Response): boolean {
+  if (user.matchingSuspendedAt) {
+    res.status(403).json({ message: "Matching is paused for this account." });
+    return false;
+  }
+  if (!user.firstName || !user.city || !user.ageConfirmed) {
+    res.status(403).json({ message: "Complete your profile before entering the queue." });
+    return false;
+  }
+  return true;
 }
 
 async function saveFetchedPdf(userId: string, title: string, sourceUrl: string, buffer: ArrayBuffer) {
@@ -167,6 +180,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/requests", requireUser, async (req, res) => {
     const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
     const parse = insertRequestSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
@@ -303,6 +317,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ---- demo helpers (so a single user can experience the full flow) ----
   app.post("/api/demo/seed-partner", requireUser, async (req, res) => {
     const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
     const partnerEmail = `demo-${Date.now()}@pilpul.local`;
     const partner = await storage.upsertUserByEmail(partnerEmail);
     await storage.updateUserProfile(partner.id, {

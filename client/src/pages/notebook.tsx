@@ -30,7 +30,7 @@ export default function Notebook() {
 
         {items.length === 0 ? (
           <p className="font-serif italic mt-10 text-muted-foreground">
-            Nothing here yet. Your reading history appears as you finish books.
+            Nothing here yet. Your reading history appears after you start studying.
           </p>
         ) : (
           <ul className="divide-y divide-border" role="list">

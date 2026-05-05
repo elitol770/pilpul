@@ -27,7 +27,8 @@ export default function SignIn() {
         <h1 className="font-serif text-2xl mb-3">Find a partner. Read one book together.</h1>
         <p className="text-muted-foreground leading-relaxed">
           Pilpul pairs two people, anywhere on Earth, for sustained one-on-one study of a
-          shared text. Enter your email to begin. We will not send you anything you didn't ask for.
+          shared text. Enter your email to begin. Email verification will be added before public
+          launch.
         </p>
 
         <form onSubmit={submit} className="mt-8">
@@ -61,7 +62,7 @@ export default function SignIn() {
         </form>
 
         <p className="mt-12 text-xs text-muted-foreground italic">
-          By continuing, you confirm you are 18 or older.
+          You will confirm you are 18 or older before entering the queue.
         </p>
       </div>
     </PageShell>

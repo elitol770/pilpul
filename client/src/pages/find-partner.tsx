@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, X } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ReadingText } from "@shared/schema";
 import { DAYS, encodeAvailability, type AvailabilityWindow } from "@shared/availability";
@@ -31,6 +32,7 @@ function newWindow(day = 1): WindowDraft {
 
 export default function FindPartner() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [textTitle, setTextTitle] = useState("");
   const [pace, setPace] = useState<"slow" | "medium" | "fast">("medium");
   const [commitment, setCommitment] = useState<"casual" | "serious">("serious");
@@ -47,6 +49,42 @@ export default function FindPartner() {
     queryKey: ["/api/texts"],
   });
   const selectedText = textData?.texts.find((text) => text.id === selectedTextId) ?? null;
+  const needsProfile = user && (!user.firstName || !user.city || !user.ageConfirmed);
+
+  if (user?.matchingSuspendedAt) {
+    return (
+      <PageShell narrow>
+        <div className="border border-border bg-card rounded-sm p-6 mt-4">
+          <span className="smallcaps">matching paused</span>
+          <p className="font-serif italic text-xl mt-1">You cannot enter the queue right now.</p>
+          <p className="text-muted-foreground mt-2">
+            A report needs maintainer review before this account can be matched again.
+          </p>
+          <Link href="/" className="inline-block mt-5 text-sm underline underline-offset-4">
+            return home
+          </Link>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (needsProfile) {
+    return (
+      <PageShell narrow>
+        <div className="border border-border bg-card rounded-sm p-6 mt-4">
+          <span className="smallcaps">before matching</span>
+          <p className="font-serif italic text-xl mt-1">Finish your name, city, and age confirmation.</p>
+          <p className="text-muted-foreground mt-2">
+            Your partner sees your first name and city. The 18+ confirmation is required before
+            entering the queue.
+          </p>
+          <Link href="/" className="inline-block mt-5 text-sm underline underline-offset-4">
+            finish profile
+          </Link>
+        </div>
+      </PageShell>
+    );
+  }
 
   function rememberText(text: ReadingText) {
     queryClient.setQueryData<{ texts: ReadingText[] }>(["/api/texts"], (current) => ({
