@@ -17,6 +17,7 @@ import CreateRoom from "@/pages/create-room";
 import InvitePage from "@/pages/invite";
 import RequestsBoard from "@/pages/requests-board";
 import Admin from "@/pages/admin";
+import AuthCallback from "@/pages/auth-callback";
 import { useAuth } from "@/lib/auth";
 
 function AppRouter() {
@@ -36,6 +37,7 @@ function AppRouter() {
         <Route path="/" component={Landing} />
         <Route path="/about" component={About} />
         <Route path="/sign-in" component={SignIn} />
+        <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/invite/:token" component={InvitePage} />
         <Route component={Landing} />
       </Switch>
@@ -47,6 +49,7 @@ function AppRouter() {
       <Route path="/" component={Home} />
       <Route path="/about" component={About} />
       <Route path="/sign-in" component={Home} />
+      <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/create" component={CreateRoom} />
       <Route path="/invite/:token" component={InvitePage} />
       <Route path="/requests" component={RequestsBoard} />

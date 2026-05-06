@@ -143,6 +143,16 @@ export const claimEmailSchema = z.object({
   email: z.string().email("Enter a valid email"),
 });
 
+export const requestMagicLinkSchema = z.object({
+  email: z.string().email("Enter a valid email"),
+  redirectPath: z.string().max(240).optional(),
+});
+export type RequestMagicLink = z.infer<typeof requestMagicLinkSchema>;
+
+export const verifyMagicLinkSchema = z.object({
+  token: z.string().min(24, "Invalid sign-in link").max(160, "Invalid sign-in link"),
+});
+
 export const createReadingTextSchema = z.object({
   title: z.string().min(1, "Title is required").max(180),
   sourceKind: z.enum(["upload", "web_pdf"]),

@@ -31,9 +31,10 @@ NODE_ENV=production node dist/index.cjs
 
 ## Auth model
 
-There is no real magic-link email. Identity is per-browser-tab via `window.name`,
-persisted server-side in Supabase as a visitor session. The "claim email"
-endpoint creates/loads a user by email and links them to the visitor.
+Sign-in uses short-lived, one-time magic links sent through Resend. The link
+returns to `/#/auth/callback`, where the app verifies the token and links the
+browser's visitor id to the Supabase user record. Local development can expose a
+dev sign-in link when Resend is not configured.
 
 ## Demo seed
 
@@ -70,10 +71,8 @@ Greedy matcher in `server/matching.ts`:
 
 ## Deferred / not built
 
-- Cloudflare Pages Functions or Workers adapter for the backend
 - Yjs CRDT (notebook uses 600ms debounced PUT + 2s GET poll)
-- Reports, admin, curated rounds, open requests board
+- Curated rounds
 - Stripe credit wrapper
-- EPUB/PDF upload
 - Real Sefaria/Gutenberg integration (texts hardcoded in `client/src/lib/texts.ts`)
 - Real Anthropic API call for AI third seat

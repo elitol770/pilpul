@@ -102,6 +102,16 @@ type DbReadingText = {
   created_at: string;
 };
 
+type DbEmailMagicLink = {
+  id: string;
+  token_hash: string;
+  email: string;
+  redirect_path: string | null;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+};
+
 type DbReport = {
   id: string;
   reporter_id: string;
@@ -293,6 +303,16 @@ export interface IStorage {
   getUserForVisitor(visitorId: string): Promise<User | undefined>;
   linkVisitorToUser(visitorId: string, userId: string): Promise<void>;
   unlinkVisitor(visitorId: string): Promise<void>;
+  createEmailMagicLink(args: {
+    tokenHash: string;
+    email: string;
+    redirectPath: string | null;
+    expiresAt: string;
+  }): Promise<void>;
+  consumeEmailMagicLink(
+    tokenHash: string,
+    now: string
+  ): Promise<{ email: string; redirectPath: string | null } | undefined>;
 
   createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText>;
   listReadingTextsForUser(userId: string): Promise<ReadingText[]>;
@@ -409,6 +429,38 @@ export class SupabaseStorage implements IStorage {
   async unlinkVisitor(visitorId: string): Promise<void> {
     const { error } = await this.db.from("visitor_sessions").delete().eq("visitor_id", visitorId);
     throwDb(error, "unlink visitor session");
+  }
+
+  async createEmailMagicLink(args: {
+    tokenHash: string;
+    email: string;
+    redirectPath: string | null;
+    expiresAt: string;
+  }): Promise<void> {
+    const { error } = await this.db.from("email_magic_links").insert({
+      id: id(),
+      token_hash: args.tokenHash,
+      email: args.email.toLowerCase(),
+      redirect_path: args.redirectPath,
+      expires_at: args.expiresAt,
+    });
+    throwDb(error, "create email magic link");
+  }
+
+  async consumeEmailMagicLink(
+    tokenHash: string,
+    now: string
+  ): Promise<{ email: string; redirectPath: string | null } | undefined> {
+    const { data, error } = await this.db
+      .from("email_magic_links")
+      .update({ used_at: now })
+      .eq("token_hash", tokenHash)
+      .is("used_at", null)
+      .gt("expires_at", now)
+      .select("*")
+      .maybeSingle<DbEmailMagicLink>();
+    throwDb(error, "consume email magic link");
+    return data ? { email: data.email, redirectPath: data.redirect_path } : undefined;
   }
 
   async createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText> {

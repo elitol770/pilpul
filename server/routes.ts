@@ -19,9 +19,19 @@ import {
   manualPairSchema,
   profileSchema,
   claimEmailSchema,
+  requestMagicLinkSchema,
+  verifyMagicLinkSchema,
   type User,
 } from "@shared/schema";
 import { z } from "zod";
+import { createMagicToken, hashMagicToken, magicLinkExpiresAt } from "./auth";
+import {
+  appOrigin,
+  buildMagicLink,
+  canReturnDevMagicLink,
+  normalizeRedirectPath,
+  sendMagicLinkEmail,
+} from "./email";
 
 const storage = getStorage();
 
@@ -86,6 +96,15 @@ function requireMaintainer(user: User, res: Response): boolean {
   return true;
 }
 
+function emailEnv() {
+  return {
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+    APP_ORIGIN: process.env.APP_ORIGIN,
+    ALLOW_DEV_MAGIC_LINKS: process.env.ALLOW_DEV_MAGIC_LINKS,
+  };
+}
+
 async function validateOwnedTextSource(userId: string, textSourceId?: string | null): Promise<string | null> {
   if (!textSourceId) return null;
   const text = await storage.getReadingText(textSourceId);
@@ -124,7 +143,57 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ user: user ?? null });
   });
 
+  app.post("/api/auth/magic-link", async (req, res) => {
+    const parse = requestMagicLinkSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ message: parse.error.issues[0].message });
+    }
+
+    const email = parse.data.email.toLowerCase();
+    const token = createMagicToken();
+    await storage.createEmailMagicLink({
+      tokenHash: await hashMagicToken(token),
+      email,
+      redirectPath: normalizeRedirectPath(parse.data.redirectPath),
+      expiresAt: magicLinkExpiresAt(),
+    });
+
+    const origin = appOrigin(
+      `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`,
+      process.env.APP_ORIGIN
+    );
+    const magicLink = buildMagicLink(origin, token);
+    const delivery = await sendMagicLinkEmail({ env: emailEnv(), to: email, magicLink });
+    if (!delivery.sent) {
+      if (!canReturnDevMagicLink(origin, emailEnv())) {
+        return res.status(503).json({ message: "Email is not configured yet." });
+      }
+      return res.json({ ok: true, sent: false, devLink: magicLink });
+    }
+
+    res.json({ ok: true, sent: true });
+  });
+
+  app.post("/api/auth/verify", async (req, res) => {
+    const parse = verifyMagicLinkSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ message: parse.error.issues[0].message });
+    }
+
+    const consumed = await storage.consumeEmailMagicLink(await hashMagicToken(parse.data.token), new Date().toISOString());
+    if (!consumed) {
+      return res.status(400).json({ message: "This sign-in link is invalid or expired." });
+    }
+
+    const user = await storage.upsertUserByEmail(consumed.email);
+    await storage.linkVisitorToUser(getVisitorId(req), user.id);
+    res.json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) });
+  });
+
   app.post("/api/claim-email", async (req, res) => {
+    if (process.env.ALLOW_UNVERIFIED_EMAIL_CLAIM !== "true" && process.env.NODE_ENV === "production") {
+      return res.status(403).json({ message: "Email verification is required." });
+    }
     const parse = claimEmailSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });

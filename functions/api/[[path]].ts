@@ -18,14 +18,29 @@ import {
   insertRequestSchema,
   manualPairSchema,
   profileSchema,
+  requestMagicLinkSchema,
+  verifyMagicLinkSchema,
   type ReadingText,
   type User,
 } from "../../shared/schema";
+import { createMagicToken, hashMagicToken, magicLinkExpiresAt } from "../../server/auth";
+import {
+  appOrigin,
+  buildMagicLink,
+  canReturnDevMagicLink,
+  normalizeRedirectPath,
+  sendMagicLinkEmail,
+} from "../../server/email";
 
 type Env = {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   MAINTAINER_EMAILS?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  APP_ORIGIN?: string;
+  ALLOW_DEV_MAGIC_LINKS?: string;
+  ALLOW_UNVERIFIED_EMAIL_CLAIM?: string;
 };
 
 type PagesContext = {
@@ -159,7 +174,51 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ user: user ?? null });
     }
 
+    if (request.method === "POST" && path === "/auth/magic-link") {
+      const parse = requestMagicLinkSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+
+      const email = parse.data.email.toLowerCase();
+      const token = createMagicToken();
+      await store.createEmailMagicLink({
+        tokenHash: await hashMagicToken(token),
+        email,
+        redirectPath: normalizeRedirectPath(parse.data.redirectPath),
+        expiresAt: magicLinkExpiresAt(),
+      });
+
+      const origin = appOrigin(request.url, env.APP_ORIGIN);
+      const magicLink = buildMagicLink(origin, token);
+      const delivery = await sendMagicLinkEmail({ env, to: email, magicLink });
+      if (!delivery.sent) {
+        if (!canReturnDevMagicLink(request.url, env)) {
+          return json({ message: "Email is not configured yet." }, 503);
+        }
+        return json({ ok: true, sent: false, devLink: magicLink });
+      }
+
+      return json({ ok: true, sent: true });
+    }
+
+    if (request.method === "POST" && path === "/auth/verify") {
+      const parse = verifyMagicLinkSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+
+      const consumed = await store.consumeEmailMagicLink(
+        await hashMagicToken(parse.data.token),
+        new Date().toISOString()
+      );
+      if (!consumed) return json({ message: "This sign-in link is invalid or expired." }, 400);
+
+      const user = await store.upsertUserByEmail(consumed.email);
+      await store.linkVisitorToUser(getVisitorId(request), user.id);
+      return json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) });
+    }
+
     if (request.method === "POST" && path === "/claim-email") {
+      if (env.ALLOW_UNVERIFIED_EMAIL_CLAIM !== "true") {
+        return json({ message: "Email verification is required." }, 403);
+      }
       const parse = claimEmailSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
 
