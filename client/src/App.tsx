@@ -11,6 +11,8 @@ import Queue from "@/pages/queue";
 import Notebook from "@/pages/notebook";
 import SessionRoom from "@/pages/session-room";
 import SignIn from "@/pages/sign-in";
+import Landing from "@/pages/landing";
+import About from "@/pages/about";
 import { useAuth } from "@/lib/auth";
 
 function AppRouter() {
@@ -25,12 +27,21 @@ function AppRouter() {
   }
 
   if (!user) {
-    return <SignIn />;
+    return (
+      <Switch>
+        <Route path="/" component={Landing} />
+        <Route path="/about" component={About} />
+        <Route path="/sign-in" component={SignIn} />
+        <Route component={Landing} />
+      </Switch>
+    );
   }
 
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/about" component={About} />
+      <Route path="/sign-in" component={Home} />
       <Route path="/find" component={FindPartner} />
       <Route path="/queue" component={Queue} />
       <Route path="/notebook" component={Notebook} />

@@ -1,32 +1,40 @@
 import { Link } from "wouter";
 import { ReactNode } from "react";
 
-export function PageShell({ children, narrow }: { children: ReactNode; narrow?: boolean }) {
+export function PageShell({
+  children,
+  narrow,
+  wide,
+}: {
+  children: ReactNode;
+  narrow?: boolean;
+  wide?: boolean;
+}) {
+  const width = narrow ? "max-w-[560px]" : wide ? "max-w-[1040px]" : "max-w-[720px]";
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-6 pt-8 pb-4">
-        <div
-          className={
-            (narrow ? "max-w-[560px]" : "max-w-[720px]") +
-            " mx-auto flex items-baseline justify-between"
-          }
-        >
+        <div className={width + " mx-auto flex items-baseline justify-between gap-4"}>
           <Link href="/" className="font-serif italic text-xl tracking-tight" data-testid="link-home">
             Pilpul
           </Link>
-          <span className="smallcaps">iron sharpens iron</span>
+          <nav className="flex items-center gap-4 text-xs">
+            <Link href="/about" className="smallcaps hover:text-foreground">
+              about
+            </Link>
+            <span className="smallcaps hidden sm:inline">iron sharpens iron</span>
+          </nav>
         </div>
-        <div className={(narrow ? "max-w-[560px]" : "max-w-[720px]") + " mx-auto mt-3 rule"} />
+        <div className={width + " mx-auto mt-3 rule"} />
       </header>
 
       <main className="flex-1 px-6 pb-16">
-        <div className={(narrow ? "max-w-[560px]" : "max-w-[720px]") + " mx-auto"}>
-          {children}
-        </div>
+        <div className={width + " mx-auto"}>{children}</div>
       </main>
 
       <footer className="px-6 pb-10">
-        <div className={(narrow ? "max-w-[560px]" : "max-w-[720px]") + " mx-auto"}>
+        <div className={width + " mx-auto"}>
           <p className="text-xs text-muted-foreground italic leading-relaxed">
             A quiet place to study with one other person, anywhere.<br />
             Not a social network. No feeds, no streaks, no ads.

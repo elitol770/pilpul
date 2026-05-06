@@ -1,69 +1,24 @@
-import { useState } from "react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Link } from "wouter";
+import { EmailClaimForm } from "@/components/email-claim-form";
 import { PageShell } from "@/components/page-shell";
 
 export default function SignIn() {
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
-      await apiRequest("POST", "/api/claim-email", { email });
-      await queryClient.invalidateQueries({ queryKey: ["/api/me"] });
-    } catch (e: any) {
-      setErr(e.message?.replace(/^\d+:\s*/, "") || "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <PageShell narrow>
       <div className="pt-8 pb-12">
-        <h1 className="font-serif text-2xl mb-3">Find a partner. Read one book together.</h1>
+        <h1 className="font-serif text-2xl mb-3">Enter Pilpul.</h1>
         <p className="text-muted-foreground leading-relaxed">
-          Pilpul pairs two people, anywhere on Earth, for sustained one-on-one study of a
-          shared text. Enter your email to begin. Email verification will be added before public
-          launch.
+          Use the same email each time. Email verification will be added before public launch.
         </p>
 
-        <form onSubmit={submit} className="mt-8">
-          <label className="smallcaps block mb-2" htmlFor="email">
-            email
-          </label>
-          <input
-            id="email"
-            data-testid="input-email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-card border border-border rounded-sm px-3 py-2 outline-none focus:border-primary"
-            placeholder="you@somewhere.com"
-            autoFocus
-          />
-          {err && (
-            <p className="text-destructive text-sm mt-2" data-testid="text-error">
-              {err}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={busy}
-            data-testid="button-enter"
-            className="mt-6 px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic"
-          >
-            {busy ? "opening…" : "enter"}
-          </button>
-        </form>
+        <EmailClaimForm />
 
         <p className="mt-12 text-xs text-muted-foreground italic">
           You will confirm you are 18 or older before entering the queue.
         </p>
+        <Link href="/" className="inline-block mt-6 text-sm underline underline-offset-4">
+          return to the landing page
+        </Link>
       </div>
     </PageShell>
   );
