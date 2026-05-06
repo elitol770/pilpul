@@ -24,6 +24,30 @@ export type Request = {
   createdAt: string;
 };
 
+export type RequestWithUser = Request & {
+  user: Pick<User, "id" | "firstName" | "city" | "timezone">;
+};
+
+export type DirectInvite = {
+  id: string;
+  token: string;
+  inviterId: string;
+  textTitle: string;
+  textSourceId: string | null;
+  pace: "slow" | "medium" | "fast";
+  commitment: "casual" | "serious";
+  scheduleWindows: string | null;
+  language: string | null;
+  status: "open" | "accepted" | "cancelled";
+  pairingId: string | null;
+  createdAt: string;
+  acceptedAt: string | null;
+};
+
+export type DirectInviteWithInviter = DirectInvite & {
+  inviter: Pick<User, "id" | "firstName" | "city" | "timezone">;
+};
+
 export type Pairing = {
   id: string;
   userAId: string;
@@ -92,6 +116,18 @@ export const insertRequestSchema = z.object({
   language: z.string().default("English"),
 });
 export type InsertRequest = z.infer<typeof insertRequestSchema>;
+
+export const createInviteSchema = insertRequestSchema.extend({
+  scheduleWindows: z.string().nullable().optional(),
+});
+export type CreateInvite = z.infer<typeof createInviteSchema>;
+
+export const manualPairSchema = z.object({
+  requestAId: z.string().uuid(),
+  requestBId: z.string().uuid(),
+  textTitle: z.string().min(1).max(160).optional(),
+});
+export type ManualPair = z.infer<typeof manualPairSchema>;
 
 export const profileSchema = z.object({
   firstName: z.string().min(1, "Required").max(40),

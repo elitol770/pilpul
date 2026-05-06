@@ -1,12 +1,16 @@
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import type {
+  CreateInvite,
   CreateReadingText,
   CreateReport,
+  DirectInvite,
+  DirectInviteWithInviter,
   InsertRequest,
   Pairing,
   ReadingText,
   Report,
   Request as PartnerRequest,
+  RequestWithUser,
   StudySession,
   User,
 } from "@shared/schema";
@@ -33,6 +37,30 @@ type DbRequest = {
   language: string | null;
   status: "open" | "matched" | "closed";
   created_at: string;
+};
+
+type DbRequestWithUser = DbRequest & {
+  users: DbUser | null;
+};
+
+type DbDirectInvite = {
+  id: string;
+  token: string;
+  inviter_id: string;
+  text_title: string;
+  text_source_id: string | null;
+  pace: "slow" | "medium" | "fast";
+  commitment: "casual" | "serious";
+  schedule_windows: string | null;
+  language: string | null;
+  status: "open" | "accepted" | "cancelled";
+  pairing_id: string | null;
+  created_at: string;
+  accepted_at: string | null;
+};
+
+type DbDirectInviteWithInviter = DbDirectInvite & {
+  users: DbUser | null;
 };
 
 type DbPairing = {
@@ -155,6 +183,47 @@ function mapRequest(row: DbRequest): PartnerRequest {
   };
 }
 
+function mapPublicUser(row: DbUser): RequestWithUser["user"] {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    city: row.city,
+    timezone: row.timezone,
+  };
+}
+
+function mapRequestWithUser(row: DbRequestWithUser): RequestWithUser {
+  return {
+    ...mapRequest(row),
+    user: row.users ? mapPublicUser(row.users) : { id: row.user_id, firstName: null, city: null, timezone: null },
+  };
+}
+
+function mapDirectInvite(row: DbDirectInvite): DirectInvite {
+  return {
+    id: row.id,
+    token: row.token,
+    inviterId: row.inviter_id,
+    textTitle: row.text_title,
+    textSourceId: row.text_source_id,
+    pace: row.pace,
+    commitment: row.commitment,
+    scheduleWindows: row.schedule_windows,
+    language: row.language,
+    status: row.status,
+    pairingId: row.pairing_id,
+    createdAt: row.created_at,
+    acceptedAt: row.accepted_at,
+  };
+}
+
+function mapDirectInviteWithInviter(row: DbDirectInviteWithInviter): DirectInviteWithInviter {
+  return {
+    ...mapDirectInvite(row),
+    inviter: row.users ? mapPublicUser(row.users) : { id: row.inviter_id, firstName: null, city: null, timezone: null },
+  };
+}
+
 function mapPairing(row: DbPairing): Pairing {
   return {
     id: row.id,
@@ -232,6 +301,8 @@ export interface IStorage {
 
   createRequest(userId: string, data: InsertRequest): Promise<PartnerRequest>;
   getOpenRequests(): Promise<PartnerRequest[]>;
+  getOpenRequestsWithUsers(excludeUserId?: string): Promise<RequestWithUser[]>;
+  getOpenRequestWithUser(id: string): Promise<RequestWithUser | undefined>;
   getUserOpenRequest(userId: string): Promise<PartnerRequest | undefined>;
   closeRequest(id: string): Promise<void>;
   closeUserOpenRequest(userId: string): Promise<void>;
@@ -253,6 +324,10 @@ export interface IStorage {
   endPairing(id: string, status: "completed" | "dissolved"): Promise<void>;
   countActivePairings(): Promise<number>;
   countCompletedThisWeek(): Promise<number>;
+
+  createDirectInvite(inviterId: string, token: string, data: CreateInvite): Promise<DirectInvite>;
+  getDirectInviteByToken(token: string): Promise<DirectInviteWithInviter | undefined>;
+  acceptDirectInvite(id: string, pairingId: string): Promise<DirectInvite | undefined>;
 
   createReport(reporterId: string, pairingId: string, data: CreateReport): Promise<Report>;
 
@@ -424,6 +499,29 @@ export class SupabaseStorage implements IStorage {
     return (data ?? []).map((row) => mapRequest(row as DbRequest));
   }
 
+  async getOpenRequestsWithUsers(excludeUserId?: string): Promise<RequestWithUser[]> {
+    let query = this.db
+      .from("requests")
+      .select("*, users(*)")
+      .eq("status", "open")
+      .order("created_at", { ascending: true });
+    if (excludeUserId) query = query.neq("user_id", excludeUserId);
+    const { data, error } = await query;
+    throwDb(error, "get open requests with users");
+    return (data ?? []).map((row) => mapRequestWithUser(row as DbRequestWithUser));
+  }
+
+  async getOpenRequestWithUser(requestId: string): Promise<RequestWithUser | undefined> {
+    const { data, error } = await this.db
+      .from("requests")
+      .select("*, users(*)")
+      .eq("id", requestId)
+      .eq("status", "open")
+      .maybeSingle<DbRequestWithUser>();
+    throwDb(error, "get open request with user");
+    return data ? mapRequestWithUser(data) : undefined;
+  }
+
   async getUserOpenRequest(userId: string): Promise<PartnerRequest | undefined> {
     const { data, error } = await this.db
       .from("requests")
@@ -559,6 +657,49 @@ export class SupabaseStorage implements IStorage {
       .gte("ended_at", since);
     throwDb(error, "count completed pairings");
     return count ?? 0;
+  }
+
+  async createDirectInvite(inviterId: string, token: string, data: CreateInvite): Promise<DirectInvite> {
+    const { data: row, error } = await this.db
+      .from("direct_invites")
+      .insert({
+        id: id(),
+        token,
+        inviter_id: inviterId,
+        text_title: data.textTitle,
+        text_source_id: data.textSourceId ?? null,
+        pace: data.pace,
+        commitment: data.commitment,
+        schedule_windows: data.scheduleWindows ?? null,
+        language: data.language ?? "English",
+        status: "open",
+      })
+      .select("*")
+      .single<DbDirectInvite>();
+    throwDb(error, "create direct invite");
+    return mapDirectInvite(requireRow(row, "create direct invite"));
+  }
+
+  async getDirectInviteByToken(token: string): Promise<DirectInviteWithInviter | undefined> {
+    const { data, error } = await this.db
+      .from("direct_invites")
+      .select("*, users(*)")
+      .eq("token", token)
+      .maybeSingle<DbDirectInviteWithInviter>();
+    throwDb(error, "get direct invite");
+    return data ? mapDirectInviteWithInviter(data) : undefined;
+  }
+
+  async acceptDirectInvite(inviteId: string, pairingId: string): Promise<DirectInvite | undefined> {
+    const { data, error } = await this.db
+      .from("direct_invites")
+      .update({ status: "accepted", pairing_id: pairingId, accepted_at: nowIso() })
+      .eq("id", inviteId)
+      .eq("status", "open")
+      .select("*")
+      .maybeSingle<DbDirectInvite>();
+    throwDb(error, "accept direct invite");
+    return data ? mapDirectInvite(data) : undefined;
   }
 
   async createReport(reporterId: string, pairingId: string, data: CreateReport): Promise<Report> {

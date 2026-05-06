@@ -179,6 +179,17 @@ export default function FindPartner() {
           Examples: "Nietzsche — Genealogy of Morals", "The Brothers Karamazov", "anything in
           moral philosophy", "Talmud, Berakhot."
         </p>
+        <p className="text-sm text-muted-foreground mt-4">
+          Already have someone in mind?{" "}
+          <Link href="/create" className="underline underline-offset-4 text-foreground">
+            Create an invite link
+          </Link>
+          . Want to start now?{" "}
+          <Link href="/requests" className="underline underline-offset-4 text-foreground">
+            Browse open requests
+          </Link>
+          .
+        </p>
 
         <form onSubmit={submit} className="mt-8 space-y-8">
           <div>

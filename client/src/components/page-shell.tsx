@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { ReactNode } from "react";
+import { useAuth } from "@/lib/auth";
 
 export function PageShell({
   children,
@@ -10,6 +11,7 @@ export function PageShell({
   narrow?: boolean;
   wide?: boolean;
 }) {
+  const { user } = useAuth();
   const width = narrow ? "max-w-[560px]" : wide ? "max-w-[1040px]" : "max-w-[720px]";
 
   return (
@@ -20,6 +22,16 @@ export function PageShell({
             Pilpul
           </Link>
           <nav className="flex items-center gap-4 text-xs">
+            {user && (
+              <>
+                <Link href="/requests" className="smallcaps hover:text-foreground">
+                  requests
+                </Link>
+                <Link href="/create" className="smallcaps hover:text-foreground">
+                  create
+                </Link>
+              </>
+            )}
             <Link href="/about" className="smallcaps hover:text-foreground">
               about
             </Link>

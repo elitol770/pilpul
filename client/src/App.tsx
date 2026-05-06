@@ -13,6 +13,10 @@ import SessionRoom from "@/pages/session-room";
 import SignIn from "@/pages/sign-in";
 import Landing from "@/pages/landing";
 import About from "@/pages/about";
+import CreateRoom from "@/pages/create-room";
+import InvitePage from "@/pages/invite";
+import RequestsBoard from "@/pages/requests-board";
+import Admin from "@/pages/admin";
 import { useAuth } from "@/lib/auth";
 
 function AppRouter() {
@@ -32,6 +36,7 @@ function AppRouter() {
         <Route path="/" component={Landing} />
         <Route path="/about" component={About} />
         <Route path="/sign-in" component={SignIn} />
+        <Route path="/invite/:token" component={InvitePage} />
         <Route component={Landing} />
       </Switch>
     );
@@ -42,6 +47,10 @@ function AppRouter() {
       <Route path="/" component={Home} />
       <Route path="/about" component={About} />
       <Route path="/sign-in" component={Home} />
+      <Route path="/create" component={CreateRoom} />
+      <Route path="/invite/:token" component={InvitePage} />
+      <Route path="/requests" component={RequestsBoard} />
+      <Route path="/admin" component={Admin} />
       <Route path="/find" component={FindPartner} />
       <Route path="/queue" component={Queue} />
       <Route path="/notebook" component={Notebook} />

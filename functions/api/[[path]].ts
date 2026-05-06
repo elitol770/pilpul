@@ -12,9 +12,11 @@ import {
 } from "../../server/pdf";
 import {
   claimEmailSchema,
+  createInviteSchema,
   createReportSchema,
   fetchPdfSchema,
   insertRequestSchema,
+  manualPairSchema,
   profileSchema,
   type ReadingText,
   type User,
@@ -23,6 +25,7 @@ import {
 type Env = {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  MAINTAINER_EMAILS?: string;
 };
 
 type PagesContext = {
@@ -67,6 +70,31 @@ function requireMatchingReady(user: User): Response | null {
   if (!user.firstName || !user.city || !user.ageConfirmed) {
     return json({ message: "Complete your profile before entering the queue." }, 403);
   }
+  return null;
+}
+
+function inviteToken(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+function requireMaintainer(user: User, env: Env): Response | null {
+  const emails = (env.MAINTAINER_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!emails.length) {
+    return json({ message: "Set MAINTAINER_EMAILS to enable the maintainer dashboard." }, 403);
+  }
+  if (!emails.includes(user.email.toLowerCase())) {
+    return json({ message: "Not a maintainer account." }, 403);
+  }
+  return null;
+}
+
+async function validateOwnedTextSource(store: IStorage, userId: string, textSourceId?: string | null) {
+  if (!textSourceId) return null;
+  const text = await store.getReadingText(textSourceId);
+  if (!text || text.ownerUserId !== userId) return json({ message: "Text source not found" }, 400);
   return null;
 }
 
@@ -226,6 +254,17 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ signedUrl });
     }
 
+    if (request.method === "GET" && path === "/requests/open") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const suspended = await store.getSuspendedUserIds();
+      const requests = (await store.getOpenRequestsWithUsers(auth.user.id)).filter(
+        (item) => !suspended.has(item.userId)
+      );
+      return json({ requests });
+    }
+
     if (request.method === "GET" && path === "/requests/mine") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
@@ -253,14 +292,140 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (!parseAvailability(parse.data.scheduleWindows)) {
         return json({ message: "Choose at least one weekly meeting time" }, 400);
       }
-      if (parse.data.textSourceId) {
-        const text = await store.getReadingText(parse.data.textSourceId);
-        if (!text || text.ownerUserId !== auth.user.id) return json({ message: "Text source not found" }, 400);
-      }
+      const textSourceError = await validateOwnedTextSource(store, auth.user.id, parse.data.textSourceId);
+      if (textSourceError) return textSourceError;
 
       const partnerRequest = await store.createRequest(auth.user.id, parse.data);
       await runMatching(store);
       return json({ request: partnerRequest });
+    }
+
+    if (segments[0] === "requests" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
+
+      const partnerRequest = await store.getOpenRequestWithUser(segments[1]);
+      if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
+      if (partnerRequest.userId === auth.user.id) return json({ message: "You cannot accept your own request." }, 400);
+
+      const partner = await store.getUser(partnerRequest.userId);
+      if (!partner || partner.matchingSuspendedAt) return json({ message: "That request is no longer available." }, 400);
+
+      const pairing = await store.createPairing({
+        userAId: partnerRequest.userId,
+        userBId: auth.user.id,
+        textTitle: partnerRequest.textTitle,
+        textSourceId: partnerRequest.textSourceId,
+        pace: partnerRequest.pace,
+      });
+      await Promise.all([
+        store.closeRequest(partnerRequest.id),
+        store.closeUserOpenRequest(auth.user.id),
+        store.createSession(pairing.id),
+      ]);
+      return json({ pairing });
+    }
+
+    if (request.method === "POST" && path === "/invites") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
+
+      const parse = createInviteSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+      const textSourceError = await validateOwnedTextSource(store, auth.user.id, parse.data.textSourceId);
+      if (textSourceError) return textSourceError;
+      if (parse.data.scheduleWindows && !parseAvailability(parse.data.scheduleWindows)) {
+        return json({ message: "Choose a valid meeting time or leave it blank" }, 400);
+      }
+
+      const invite = await store.createDirectInvite(auth.user.id, inviteToken(), parse.data);
+      return json({ invite });
+    }
+
+    if (segments[0] === "invites" && segments[1] && request.method === "GET") {
+      const invite = await store.getDirectInviteByToken(segments[1]);
+      if (!invite) return json({ message: "Invite not found" }, 404);
+      return json({ invite });
+    }
+
+    if (segments[0] === "invites" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
+
+      const invite = await store.getDirectInviteByToken(segments[1]);
+      if (!invite) return json({ message: "Invite not found" }, 404);
+      if (invite.status !== "open") return json({ message: "This invite has already been used." }, 409);
+      if (invite.inviterId === auth.user.id) return json({ message: "Send this invite to someone else." }, 400);
+
+      const inviter = await store.getUser(invite.inviterId);
+      if (!inviter || inviter.matchingSuspendedAt) return json({ message: "This invite is no longer available." }, 400);
+
+      const pairing = await store.createPairing({
+        userAId: invite.inviterId,
+        userBId: auth.user.id,
+        textTitle: invite.textTitle,
+        textSourceId: invite.textSourceId,
+        pace: invite.pace,
+      });
+      const accepted = await store.acceptDirectInvite(invite.id, pairing.id);
+      if (!accepted) return json({ message: "This invite has already been used." }, 409);
+      await Promise.all([
+        store.closeUserOpenRequest(invite.inviterId),
+        store.closeUserOpenRequest(auth.user.id),
+        store.createSession(pairing.id),
+      ]);
+      return json({ pairing, invite: accepted });
+    }
+
+    if (request.method === "GET" && path === "/admin/requests") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const maintainerBlock = requireMaintainer(auth.user, env);
+      if (maintainerBlock) return maintainerBlock;
+
+      const suspended = await store.getSuspendedUserIds();
+      const requests = (await store.getOpenRequestsWithUsers()).filter((item) => !suspended.has(item.userId));
+      return json({ requests });
+    }
+
+    if (request.method === "POST" && path === "/admin/pairings") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const maintainerBlock = requireMaintainer(auth.user, env);
+      if (maintainerBlock) return maintainerBlock;
+
+      const parse = manualPairSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+      if (parse.data.requestAId === parse.data.requestBId) {
+        return json({ message: "Choose two different requests." }, 400);
+      }
+
+      const [a, b, suspended] = await Promise.all([
+        store.getOpenRequestWithUser(parse.data.requestAId),
+        store.getOpenRequestWithUser(parse.data.requestBId),
+        store.getSuspendedUserIds(),
+      ]);
+      if (!a || !b) return json({ message: "One of those requests is no longer open." }, 404);
+      if (a.userId === b.userId) return json({ message: "Choose requests from two different people." }, 400);
+      if (suspended.has(a.userId) || suspended.has(b.userId)) {
+        return json({ message: "One of those accounts is paused from matching." }, 400);
+      }
+
+      const pairing = await store.createPairing({
+        userAId: a.userId,
+        userBId: b.userId,
+        textTitle: parse.data.textTitle?.trim() || (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
+        textSourceId: a.textSourceId ?? b.textSourceId,
+        pace: a.pace === b.pace ? a.pace : a.pace,
+      });
+      await Promise.all([store.closeRequest(a.id), store.closeRequest(b.id), store.createSession(pairing.id)]);
+      return json({ pairing });
     }
 
     if (request.method === "GET" && path === "/pairings/active") {

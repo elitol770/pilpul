@@ -13,8 +13,10 @@ import {
 } from "./pdf";
 import {
   createReportSchema,
+  createInviteSchema,
   fetchPdfSchema,
   insertRequestSchema,
+  manualPairSchema,
   profileSchema,
   claimEmailSchema,
   type User,
@@ -62,6 +64,33 @@ function requireMatchingReady(user: User, res: Response): boolean {
     return false;
   }
   return true;
+}
+
+function inviteToken(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+function requireMaintainer(user: User, res: Response): boolean {
+  const emails = (process.env.MAINTAINER_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!emails.length) {
+    res.status(403).json({ message: "Set MAINTAINER_EMAILS to enable the maintainer dashboard." });
+    return false;
+  }
+  if (!emails.includes(user.email.toLowerCase())) {
+    res.status(403).json({ message: "Not a maintainer account." });
+    return false;
+  }
+  return true;
+}
+
+async function validateOwnedTextSource(userId: string, textSourceId?: string | null): Promise<string | null> {
+  if (!textSourceId) return null;
+  const text = await storage.getReadingText(textSourceId);
+  if (!text || text.ownerUserId !== userId) return "Text source not found";
+  return null;
 }
 
 async function saveFetchedPdf(userId: string, title: string, sourceUrl: string, buffer: ArrayBuffer) {
@@ -166,6 +195,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ---- requests ----
+  app.get("/api/requests/open", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const suspended = await storage.getSuspendedUserIds();
+    const requests = (await storage.getOpenRequestsWithUsers(user.id)).filter((item) => !suspended.has(item.userId));
+    res.json({ requests });
+  });
+
   app.get("/api/requests/mine", requireUser, async (req, res) => {
     const user = (req as any).user;
     const open = (await storage.getUserOpenRequest(user.id)) ?? null;
@@ -188,14 +224,134 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!parseAvailability(parse.data.scheduleWindows)) {
       return res.status(400).json({ message: "Choose at least one weekly meeting time" });
     }
-    if (parse.data.textSourceId) {
-      const text = await storage.getReadingText(parse.data.textSourceId);
-      if (!text || text.ownerUserId !== user.id) return res.status(400).json({ message: "Text source not found" });
-    }
+    const textSourceError = await validateOwnedTextSource(user.id, parse.data.textSourceId);
+    if (textSourceError) return res.status(400).json({ message: textSourceError });
     const r = await storage.createRequest(user.id, parse.data);
     // Try matching immediately so demo users see fast feedback.
     await runMatching();
     res.json({ request: r });
+  });
+
+  app.post("/api/requests/:id/accept", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
+
+    const partnerRequest = await storage.getOpenRequestWithUser(String(req.params.id));
+    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (partnerRequest.userId === user.id) return res.status(400).json({ message: "You cannot accept your own request." });
+
+    const partner = await storage.getUser(partnerRequest.userId);
+    if (!partner || partner.matchingSuspendedAt) {
+      return res.status(400).json({ message: "That request is no longer available." });
+    }
+
+    const pairing = await storage.createPairing({
+      userAId: partnerRequest.userId,
+      userBId: user.id,
+      textTitle: partnerRequest.textTitle,
+      textSourceId: partnerRequest.textSourceId,
+      pace: partnerRequest.pace,
+    });
+    await Promise.all([
+      storage.closeRequest(partnerRequest.id),
+      storage.closeUserOpenRequest(user.id),
+      storage.createSession(pairing.id),
+    ]);
+    res.json({ pairing });
+  });
+
+  // ---- direct invites ----
+  app.post("/api/invites", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
+
+    const parse = createInviteSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ message: parse.error.issues[0].message });
+    const textSourceError = await validateOwnedTextSource(user.id, parse.data.textSourceId);
+    if (textSourceError) return res.status(400).json({ message: textSourceError });
+    if (parse.data.scheduleWindows && !parseAvailability(parse.data.scheduleWindows)) {
+      return res.status(400).json({ message: "Choose a valid meeting time or leave it blank" });
+    }
+
+    const invite = await storage.createDirectInvite(user.id, inviteToken(), parse.data);
+    res.json({ invite });
+  });
+
+  app.get("/api/invites/:token", async (req, res) => {
+    const invite = await storage.getDirectInviteByToken(String(req.params.token));
+    if (!invite) return res.status(404).json({ message: "Invite not found" });
+    res.json({ invite });
+  });
+
+  app.post("/api/invites/:token/accept", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
+
+    const invite = await storage.getDirectInviteByToken(String(req.params.token));
+    if (!invite) return res.status(404).json({ message: "Invite not found" });
+    if (invite.status !== "open") return res.status(409).json({ message: "This invite has already been used." });
+    if (invite.inviterId === user.id) return res.status(400).json({ message: "Send this invite to someone else." });
+
+    const inviter = await storage.getUser(invite.inviterId);
+    if (!inviter || inviter.matchingSuspendedAt) {
+      return res.status(400).json({ message: "This invite is no longer available." });
+    }
+
+    const pairing = await storage.createPairing({
+      userAId: invite.inviterId,
+      userBId: user.id,
+      textTitle: invite.textTitle,
+      textSourceId: invite.textSourceId,
+      pace: invite.pace,
+    });
+    const accepted = await storage.acceptDirectInvite(invite.id, pairing.id);
+    if (!accepted) return res.status(409).json({ message: "This invite has already been used." });
+    await Promise.all([
+      storage.closeUserOpenRequest(invite.inviterId),
+      storage.closeUserOpenRequest(user.id),
+      storage.createSession(pairing.id),
+    ]);
+    res.json({ pairing, invite: accepted });
+  });
+
+  // ---- maintainer ----
+  app.get("/api/admin/requests", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMaintainer(user, res)) return;
+    const suspended = await storage.getSuspendedUserIds();
+    const requests = (await storage.getOpenRequestsWithUsers()).filter((item) => !suspended.has(item.userId));
+    res.json({ requests });
+  });
+
+  app.post("/api/admin/pairings", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMaintainer(user, res)) return;
+    const parse = manualPairSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ message: parse.error.issues[0].message });
+    if (parse.data.requestAId === parse.data.requestBId) {
+      return res.status(400).json({ message: "Choose two different requests." });
+    }
+
+    const [a, b, suspended] = await Promise.all([
+      storage.getOpenRequestWithUser(parse.data.requestAId),
+      storage.getOpenRequestWithUser(parse.data.requestBId),
+      storage.getSuspendedUserIds(),
+    ]);
+    if (!a || !b) return res.status(404).json({ message: "One of those requests is no longer open." });
+    if (a.userId === b.userId) return res.status(400).json({ message: "Choose requests from two different people." });
+    if (suspended.has(a.userId) || suspended.has(b.userId)) {
+      return res.status(400).json({ message: "One of those accounts is paused from matching." });
+    }
+
+    const pairing = await storage.createPairing({
+      userAId: a.userId,
+      userBId: b.userId,
+      textTitle: parse.data.textTitle?.trim() || (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
+      textSourceId: a.textSourceId ?? b.textSourceId,
+      pace: a.pace,
+    });
+    await Promise.all([storage.closeRequest(a.id), storage.closeRequest(b.id), storage.createSession(pairing.id)]);
+    res.json({ pairing });
   });
 
   // ---- pairings ----
