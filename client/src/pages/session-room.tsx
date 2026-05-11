@@ -157,6 +157,7 @@ export default function SessionRoom() {
               <AiSeat
                 onClose={() => setAiOpen(false)}
                 textTitle={title}
+                pdfUrl={data.readingText?.signedUrl ?? null}
                 notebookContent={notebookForAi}
               />
             )}
@@ -405,10 +406,12 @@ function defaultModel(provider: AiProvider): string {
 function AiSeat({
   onClose,
   textTitle,
+  pdfUrl,
   notebookContent,
 }: {
   onClose: () => void;
   textTitle: string;
+  pdfUrl: string | null;
   notebookContent: string;
 }) {
   const [mode, setMode] = useState<AiMode>("explainer");
@@ -467,6 +470,7 @@ function AiSeat({
         mode,
         prompt: question,
         textTitle,
+        pdfUrl: provider === "compatible" ? null : pdfUrl,
         notebookExcerpt: lastNotebookExcerpt(notebookContent),
       });
       setResponse(answer);
@@ -583,6 +587,8 @@ function AiSeat({
         </div>
         <p className="text-[11px] text-muted-foreground italic">
           Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request. Pilpul does not store it.
+          {pdfUrl && provider !== "compatible" ? " The attached PDF and current notebook excerpt are included." : ""}
+          {pdfUrl && provider === "compatible" ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider." : ""}
         </p>
       </div>
 

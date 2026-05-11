@@ -55,6 +55,7 @@ type AskThirdSeatArgs = {
   mode: AiMode;
   prompt: string;
   textTitle: string;
+  pdfUrl?: string | null;
   notebookExcerpt: string;
 };
 
@@ -90,6 +91,7 @@ function systemPrompt(mode: AiMode): string {
 function userPrompt(args: AskThirdSeatArgs): string {
   return [
     `Shared text: ${args.textTitle}`,
+    args.pdfUrl ? "A PDF of the shared text is attached to this request. Use it as the primary source." : "No PDF is attached to this request.",
     args.notebookExcerpt ? `Recent shared notebook:\n${args.notebookExcerpt}` : "Recent shared notebook: empty or not provided.",
     `Question:\n${args.prompt}`,
   ].join("\n\n");
@@ -117,6 +119,24 @@ function responseText(body: OpenAiResponse): string {
 }
 
 async function askAnthropic(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
+  const content: Array<
+    | { type: "document"; source: { type: "url"; url: string } }
+    | { type: "text"; text: string }
+  > = [];
+  if (args.pdfUrl) {
+    content.push({
+      type: "document",
+      source: {
+        type: "url",
+        url: args.pdfUrl,
+      },
+    });
+  }
+  content.push({
+    type: "text",
+    text: userPrompt(args),
+  });
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -132,7 +152,7 @@ async function askAnthropic(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
       messages: [
         {
           role: "user",
-          content: userPrompt(args),
+          content,
         },
       ],
     }),
@@ -161,6 +181,17 @@ async function askAnthropic(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
 }
 
 async function askOpenAi(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
+  const content: Array<
+    | { type: "input_text"; text: string }
+    | { type: "input_file"; file_url: string }
+  > = [{ type: "input_text", text: userPrompt(args) }];
+  if (args.pdfUrl) {
+    content.push({
+      type: "input_file",
+      file_url: args.pdfUrl,
+    });
+  }
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -170,7 +201,12 @@ async function askOpenAi(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
     body: JSON.stringify({
       model: args.model || OPENAI_MODEL,
       instructions: systemPrompt(args.mode),
-      input: userPrompt(args),
+      input: [
+        {
+          role: "user",
+          content,
+        },
+      ],
       max_output_tokens: 420,
     }),
   });
