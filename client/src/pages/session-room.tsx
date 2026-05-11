@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, Mic, Video, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Mic, Minus, Plus, Video, X } from "lucide-react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 import { apiRequest } from "@/lib/queryClient";
 import { findText } from "@/lib/texts";
 import { useAuth } from "@/lib/auth";
@@ -29,6 +31,14 @@ type RoomData = {
   readingText: (ReadingText & { signedUrl: string }) | null;
 };
 
+type PdfStudyContext = {
+  pageNumber: number;
+  selectedText: string | null;
+  pageText: string | null;
+};
+
+type PdfJsModule = typeof import("pdfjs-dist");
+
 export default function SessionRoom() {
   const params = useParams();
   const id = params.id as string;
@@ -40,6 +50,8 @@ export default function SessionRoom() {
   const [tab, setTab] = useState<"text" | "notebook">("text");
   const [aiOpen, setAiOpen] = useState(false);
   const [notebookForAi, setNotebookForAi] = useState("");
+  const [pdfContext, setPdfContext] = useState<PdfStudyContext | null>(null);
+  const [aiDraftPrompt, setAiDraftPrompt] = useState("");
 
   if (isLoading || !data?.pairing) {
     return (
@@ -114,7 +126,20 @@ export default function SessionRoom() {
           }
         >
           {data.readingText?.signedUrl ? (
-            <PdfReader text={data.readingText} />
+            <PdfReader
+              text={data.readingText}
+              onContextChange={setPdfContext}
+              onAskSelection={(context) => {
+                setPdfContext(context);
+                setAiDraftPrompt(
+                  context.selectedText
+                    ? `Help us understand this passage from page ${context.pageNumber}:\n\n${context.selectedText}`
+                    : `Help us understand page ${context.pageNumber}.`
+                );
+                setAiOpen(true);
+                setTab("notebook");
+              }}
+            />
           ) : (
             <div className="max-w-prose mx-auto px-6 py-8">
               <span className="smallcaps">{text.source}</span>
@@ -158,6 +183,8 @@ export default function SessionRoom() {
                 onClose={() => setAiOpen(false)}
                 textTitle={title}
                 pdfUrl={data.readingText?.signedUrl ?? null}
+                pdfContext={pdfContext}
+                draftPrompt={aiDraftPrompt}
                 notebookContent={notebookForAi}
               />
             )}
@@ -190,23 +217,291 @@ export default function SessionRoom() {
 
 // -----------------------------------------------------------------------------
 
-function PdfReader({ text }: { text: ReadingText & { signedUrl: string } }) {
+function textContentToString(content: { items: Array<unknown> }): string {
+  return content.items
+    .map((item) => {
+      const str = (item as { str?: unknown }).str;
+      return typeof str === "string" ? str : "";
+    })
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function selectionInside(node: HTMLElement | null): string {
+  if (!node) return "";
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return "";
+  const anchor = selection.anchorNode;
+  const focus = selection.focusNode;
+  if ((anchor && !node.contains(anchor)) || (focus && !node.contains(focus))) return "";
+  return selection.toString().replace(/\s+/g, " ").trim();
+}
+
+function PdfReader({
+  text,
+  onContextChange,
+  onAskSelection,
+}: {
+  text: ReadingText & { signedUrl: string };
+  onContextChange: (context: PdfStudyContext) => void;
+  onAskSelection: (context: PdfStudyContext) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
+  const pageWrapRef = useRef<HTMLDivElement | null>(null);
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const [pdfjs, setPdfjs] = useState<PdfJsModule | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [scale, setScale] = useState(1.15);
+  const [pageText, setPageText] = useState("");
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rendering, setRendering] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let task: ReturnType<PdfJsModule["getDocument"]> | null = null;
+    setLoading(true);
+    setErr(null);
+    setDoc(null);
+    setPageNumber(1);
+    setPageInput("1");
+
+    async function loadPdf() {
+      try {
+        const loadedPdfjs = await import("pdfjs-dist");
+        loadedPdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+        if (cancelled) return;
+
+        setPdfjs(loadedPdfjs);
+        task = loadedPdfjs.getDocument({ url: text.signedUrl });
+        const loaded = await task.promise;
+        if (cancelled) {
+          loaded.destroy();
+          return;
+        }
+        setDoc(loaded);
+      } catch (error: any) {
+        if (!cancelled) setErr(error.message || "Could not open PDF");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadPdf();
+
+    return () => {
+      cancelled = true;
+      task?.destroy();
+    };
+  }, [text.signedUrl]);
+
+  useEffect(() => {
+    if (!doc || !pdfjs) return;
+    const pdfjsLib = pdfjs;
+
+    let cancelled = false;
+    let renderTask: { cancel: () => void; promise: Promise<unknown> } | null = null;
+    let textLayer: { cancel: () => void; render: () => Promise<unknown> } | null = null;
+
+    async function renderPage() {
+      const canvas = canvasRef.current;
+      const textLayerNode = textLayerRef.current;
+      if (!canvas || !textLayerNode || !doc) return;
+
+      setRendering(true);
+      setErr(null);
+      setSelectedText(null);
+
+      try {
+        const page = await doc.getPage(pageNumber);
+        if (cancelled) return;
+
+        const viewport = page.getViewport({ scale });
+        const outputScale = window.devicePixelRatio || 1;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas is not available");
+
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        textLayerNode.style.width = canvas.style.width;
+        textLayerNode.style.height = canvas.style.height;
+        textLayerNode.style.setProperty("--scale-factor", String(viewport.scale));
+        textLayerNode.replaceChildren();
+
+        renderTask = page.render({
+          canvasContext: context,
+          viewport,
+          transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+        });
+        await renderTask.promise;
+        if (cancelled) return;
+
+        const content = await page.getTextContent();
+        if (cancelled) return;
+
+        const nextPageText = textContentToString(content);
+        setPageText(nextPageText);
+        onContextChange({ pageNumber, selectedText: null, pageText: nextPageText });
+
+        textLayer = new pdfjsLib.TextLayer({
+          textContentSource: content,
+          container: textLayerNode,
+          viewport,
+        });
+        await textLayer.render();
+      } catch (error: any) {
+        if (!cancelled && error?.name !== "RenderingCancelledException") {
+          setErr(error.message || "Could not render PDF page");
+        }
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    }
+
+    renderPage();
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+      textLayer?.cancel();
+    };
+  }, [doc, onContextChange, pageNumber, pdfjs, scale]);
+
+  useEffect(() => {
+    setPageInput(String(pageNumber));
+  }, [pageNumber]);
+
+  function clampPage(value: number): number {
+    if (!doc) return 1;
+    return Math.min(Math.max(value, 1), doc.numPages);
+  }
+
+  function commitPageInput() {
+    const next = Number(pageInput);
+    if (Number.isFinite(next)) setPageNumber(clampPage(Math.round(next)));
+    else setPageInput(String(pageNumber));
+  }
+
+  function captureSelection() {
+    const next = selectionInside(textLayerRef.current);
+    const normalized = next ? next.slice(0, 4000) : null;
+    setSelectedText(normalized);
+    onContextChange({ pageNumber, selectedText: normalized, pageText });
+  }
+
+  const currentContext = { pageNumber, selectedText, pageText };
+
   return (
     <div className="h-full min-h-[calc(100vh-106px)] flex flex-col">
-      <div className="px-6 pt-6 pb-4">
-        <span className="smallcaps">pdf</span>
-        <h2 className="font-serif italic text-xl mt-1">{text.title}</h2>
-        {text.sourceUrl && (
-          <p className="text-xs text-muted-foreground truncate mt-1">{text.sourceUrl}</p>
-        )}
+      <div className="px-6 pt-5 pb-4 border-b border-border bg-background">
+        <div className="flex flex-col gap-4">
+          <div className="min-w-0">
+            <span className="smallcaps">pdf</span>
+            <h2 className="font-serif italic text-xl mt-1 truncate">{text.title}</h2>
+            {text.sourceUrl && (
+              <p className="text-xs text-muted-foreground truncate mt-1">{text.sourceUrl}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPageNumber((current) => clampPage(current - 1))}
+                disabled={!doc || pageNumber <= 1}
+                aria-label="Previous page"
+                className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <input
+                value={pageInput}
+                onChange={(event) => setPageInput(event.target.value)}
+                onBlur={commitPageInput}
+                onKeyDown={(event) => event.key === "Enter" && commitPageInput()}
+                inputMode="numeric"
+                className="h-8 w-14 bg-card border border-border rounded-sm px-2 text-center text-sm tabular outline-none focus:border-primary"
+                data-testid="input-pdf-page"
+              />
+              <span className="text-xs text-muted-foreground tabular">
+                / {doc?.numPages ?? "—"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPageNumber((current) => clampPage(current + 1))}
+                disabled={!doc || pageNumber >= doc.numPages}
+                aria-label="Next page"
+                className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScale((current) => Math.max(0.7, Number((current - 0.1).toFixed(2))))}
+                aria-label="Zoom out"
+                className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate"
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <span className="w-12 text-center text-xs text-muted-foreground tabular">
+                {Math.round(scale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setScale((current) => Math.min(2.2, Number((current + 0.1).toFixed(2))))}
+                aria-label="Zoom in"
+                className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              {selectedText && (
+                <button
+                  type="button"
+                  onClick={() => onAskSelection(currentContext)}
+                  data-testid="button-ask-ai-about-selection"
+                  className="ml-1 px-3 py-1.5 border border-border rounded-sm bg-card hover-elevate font-serif italic text-sm"
+                >
+                  ask ai
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="flex-1 min-h-[70vh] px-6 pb-6">
-        <iframe
-          title={text.title}
-          src={`${text.signedUrl}#view=FitH`}
-          className="w-full h-full min-h-[70vh] border border-border rounded-sm bg-card"
-          data-testid="iframe-pdf-reader"
-        />
+
+      <div
+        className="flex-1 min-h-0 overflow-auto px-4 sm:px-6 py-6"
+        onMouseUp={captureSelection}
+        onTouchEnd={() => setTimeout(captureSelection, 0)}
+      >
+        {loading ? (
+          <p className="text-muted-foreground italic">opening PDF...</p>
+        ) : err ? (
+          <p className="text-destructive text-sm">{err}</p>
+        ) : (
+          <div
+            ref={pageWrapRef}
+            className="relative mx-auto w-fit bg-white text-black border border-border"
+            data-testid="pdf-page"
+          >
+            <canvas ref={canvasRef} className="block" />
+            <div ref={textLayerRef} className="textLayer absolute inset-0" />
+            {rendering && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-xs text-muted-foreground italic">
+                rendering...
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -407,11 +702,15 @@ function AiSeat({
   onClose,
   textTitle,
   pdfUrl,
+  pdfContext,
+  draftPrompt,
   notebookContent,
 }: {
   onClose: () => void;
   textTitle: string;
   pdfUrl: string | null;
+  pdfContext: PdfStudyContext | null;
+  draftPrompt: string;
   notebookContent: string;
 }) {
   const [mode, setMode] = useState<AiMode>("explainer");
@@ -433,6 +732,10 @@ function AiSeat({
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<ThirdSeatAnswer | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (draftPrompt) setPrompt(draftPrompt);
+  }, [draftPrompt]);
 
   useEffect(() => {
     try {
@@ -471,6 +774,7 @@ function AiSeat({
         prompt: question,
         textTitle,
         pdfUrl: provider === "compatible" ? null : pdfUrl,
+        pdfContext,
         notebookExcerpt: lastNotebookExcerpt(notebookContent),
       });
       setResponse(answer);
@@ -589,6 +893,7 @@ function AiSeat({
           Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request. Pilpul does not store it.
           {pdfUrl && provider !== "compatible" ? " The attached PDF and current notebook excerpt are included." : ""}
           {pdfUrl && provider === "compatible" ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider." : ""}
+          {pdfContext?.pageNumber ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.` : ""}
         </p>
       </div>
 

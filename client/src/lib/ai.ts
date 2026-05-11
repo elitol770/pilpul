@@ -56,6 +56,11 @@ type AskThirdSeatArgs = {
   prompt: string;
   textTitle: string;
   pdfUrl?: string | null;
+  pdfContext?: {
+    pageNumber: number;
+    selectedText?: string | null;
+    pageText?: string | null;
+  } | null;
   notebookExcerpt: string;
 };
 
@@ -92,6 +97,19 @@ function userPrompt(args: AskThirdSeatArgs): string {
   return [
     `Shared text: ${args.textTitle}`,
     args.pdfUrl ? "A PDF of the shared text is attached to this request. Use it as the primary source." : "No PDF is attached to this request.",
+    args.pdfContext?.pageNumber
+      ? [
+          `Current PDF page: ${args.pdfContext.pageNumber}`,
+          args.pdfContext.selectedText
+            ? `Selected passage:\n${args.pdfContext.selectedText.slice(0, 4000)}`
+            : null,
+          args.pdfContext.pageText
+            ? `Current page text excerpt:\n${args.pdfContext.pageText.slice(0, 6000)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : "Current PDF page: not provided.",
     args.notebookExcerpt ? `Recent shared notebook:\n${args.notebookExcerpt}` : "Recent shared notebook: empty or not provided.",
     `Question:\n${args.prompt}`,
   ].join("\n\n");
