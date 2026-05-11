@@ -1,6 +1,6 @@
 export type AiMode = "explainer" | "devil" | "source";
 
-export const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+export const CLAUDE_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
 const INPUT_DOLLARS_PER_MILLION = 3;
 const OUTPUT_DOLLARS_PER_MILLION = 15;
@@ -106,4 +106,3 @@ export async function askThirdSeat(args: AskThirdSeatArgs): Promise<ThirdSeatAns
     estimatedCostUsd: cost(inputTokens, outputTokens),
   };
 }
-
