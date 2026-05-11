@@ -44,11 +44,20 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = await res.text();
     let message = text || res.statusText;
+    let parsed: unknown = null;
     try {
-      const parsed = JSON.parse(text) as { message?: unknown };
-      if (typeof parsed.message === "string") message = parsed.message;
+      parsed = JSON.parse(text) as { message?: unknown };
+      if (typeof (parsed as { message?: unknown }).message === "string") {
+        message = (parsed as { message: string }).message;
+      }
     } catch {}
-    throw new Error(`${res.status}: ${message}`);
+    const error = new Error(`${res.status}: ${message}`) as Error & {
+      status?: number;
+      body?: unknown;
+    };
+    error.status = res.status;
+    error.body = parsed;
+    throw error;
   }
 }
 
@@ -61,6 +70,7 @@ export async function apiRequest(
   const res = await fetch(`${API_BASE}${url}`, {
     method,
     headers: authHeaders(data && !isFormData ? { "Content-Type": "application/json" } : undefined),
+    credentials: "same-origin",
     body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
   });
   await throwIfResNotOk(res);
@@ -78,7 +88,7 @@ export const getQueryFn: <T>(options: {
       .map((k) => String(k))
       .join("/")
       .replace(/\/+/g, "/");
-    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders(), credentials: "same-origin" });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

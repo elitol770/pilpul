@@ -5,6 +5,7 @@ import { ExternalLink, Mic, Video, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { findText } from "@/lib/texts";
 import { useAuth } from "@/lib/auth";
+import { askThirdSeat, CLAUDE_MODEL, type AiMode, type ThirdSeatAnswer } from "@/lib/ai";
 import type { ReadingText } from "@shared/schema";
 
 type RoomData = {
@@ -31,6 +32,7 @@ export default function SessionRoom() {
 
   const [tab, setTab] = useState<"text" | "notebook">("text");
   const [aiOpen, setAiOpen] = useState(false);
+  const [notebookForAi, setNotebookForAi] = useState("");
 
   if (isLoading || !data?.pairing) {
     return (
@@ -138,8 +140,19 @@ export default function SessionRoom() {
           }
         >
           <div className="flex-1 flex flex-col min-h-0">
-            <Notebook pairingId={pairing.id} userId={user?.id ?? ""} partnerName={partner?.firstName ?? null} />
-            {aiOpen && <AiSeat onClose={() => setAiOpen(false)} />}
+            <Notebook
+              pairingId={pairing.id}
+              userId={user?.id ?? ""}
+              partnerName={partner?.firstName ?? null}
+              onContentForAi={setNotebookForAi}
+            />
+            {aiOpen && (
+              <AiSeat
+                onClose={() => setAiOpen(false)}
+                textTitle={title}
+                notebookContent={notebookForAi}
+              />
+            )}
           </div>
 
           <div className="border-t border-border px-6 py-3 flex items-center justify-between gap-3 bg-card">
@@ -193,18 +206,35 @@ function PdfReader({ text }: { text: ReadingText & { signedUrl: string } }) {
 
 // -----------------------------------------------------------------------------
 
+function mergeNotebookContent(base: string, server: string, local: string): string {
+  if (server === local) return server;
+  if (server.includes(local)) return server;
+  if (local.includes(server)) return local;
+
+  if (base && server.startsWith(base) && local.startsWith(base)) {
+    const serverAdded = server.slice(base.length).trim();
+    const localAdded = local.slice(base.length).trim();
+    return [base.trimEnd(), serverAdded, localAdded].filter(Boolean).join("\n\n");
+  }
+
+  return `${server.trimEnd()}\n\n--- local edit from this browser ---\n${local.trimStart()}`;
+}
+
 function Notebook({
   pairingId,
   userId,
   partnerName,
+  onContentForAi,
 }: {
   pairingId: string;
   userId: string;
   partnerName: string | null;
+  onContentForAi: (content: string) => void;
 }) {
   const [content, setContent] = useState<string>("");
   const [serverUpdatedAt, setServerUpdatedAt] = useState<string | null>(null);
   const [partnerActive, setPartnerActive] = useState(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const lastTypedRef = useRef<number>(0);
   const lastPushedRef = useRef<string>("");
   const skipNextSyncRef = useRef(false);
@@ -216,6 +246,7 @@ function Notebook({
       const j = await r.json();
       if (!cancelled) {
         setContent(j.content || "");
+        onContentForAi(j.content || "");
         setServerUpdatedAt(j.updatedAt);
         lastPushedRef.current = j.content || "";
       }
@@ -232,14 +263,24 @@ function Notebook({
         const r = await apiRequest("GET", `/api/pairings/${pairingId}/notebook`);
         const j = await r.json();
         if (j.updatedAt && j.updatedAt !== serverUpdatedAt) {
-          setServerUpdatedAt(j.updatedAt);
+          if (j.content === content) {
+            setServerUpdatedAt(j.updatedAt);
+            lastPushedRef.current = j.content;
+            return;
+          }
+
           // Avoid clobbering active typing within last 1.5s
           const sinceTyped = Date.now() - lastTypedRef.current;
           if (sinceTyped > 1500 && j.content !== content) {
             skipNextSyncRef.current = true;
             setContent(j.content);
+            onContentForAi(j.content);
+            setServerUpdatedAt(j.updatedAt);
             lastPushedRef.current = j.content;
             // Show "partner just edited" hint briefly
+            setPartnerActive(true);
+            setTimeout(() => setPartnerActive(false), 2500);
+          } else {
             setPartnerActive(true);
             setTimeout(() => setPartnerActive(false), 2500);
           }
@@ -257,17 +298,29 @@ function Notebook({
     }
     if (content === lastPushedRef.current) return;
     const t = setTimeout(async () => {
+      const localContent = content;
       try {
         const r = await apiRequest("PUT", `/api/pairings/${pairingId}/notebook`, {
-          content,
+          content: localContent,
+          baseUpdatedAt: serverUpdatedAt,
         });
         const j = await r.json();
-        lastPushedRef.current = content;
+        lastPushedRef.current = j.content ?? localContent;
         setServerUpdatedAt(j.updatedAt);
-      } catch {}
-    }, 600);
+      } catch (e: any) {
+        if (e.status === 409 && typeof e.body?.content === "string") {
+          const merged = mergeNotebookContent(lastPushedRef.current, e.body.content, localContent);
+          lastPushedRef.current = e.body.content;
+          setServerUpdatedAt(e.body.updatedAt ?? null);
+          setSyncWarning("Your partner edited at the same time. Pilpul kept both versions.");
+          setContent(merged);
+          onContentForAi(merged);
+          setTimeout(() => setSyncWarning(null), 4500);
+        }
+      }
+    }, 650);
     return () => clearTimeout(t);
-  }, [content, pairingId]);
+  }, [content, pairingId, serverUpdatedAt]);
 
   const placeholder = useMemo(
     () =>
@@ -286,12 +339,19 @@ function Notebook({
           </span>
         )}
       </div>
+      {syncWarning && (
+        <p className="px-6 pb-2 text-xs italic text-muted-foreground" data-testid="text-notebook-sync-warning">
+          {syncWarning}
+        </p>
+      )}
       <textarea
         data-testid="textarea-notebook"
         value={content}
         onChange={(e) => {
           lastTypedRef.current = Date.now();
+          setSyncWarning(null);
           setContent(e.target.value);
+          onContentForAi(e.target.value);
         }}
         placeholder={placeholder}
         className="flex-1 w-full bg-card border-y border-border px-6 py-4 outline-none resize-none font-serif text-[1.0625rem] leading-[1.75]"
@@ -302,37 +362,72 @@ function Notebook({
 
 // -----------------------------------------------------------------------------
 
-function AiSeat({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<"explainer" | "devil" | "source">("explainer");
+const AI_KEY_STORAGE = "pilpul_anthropic_key";
+
+function lastNotebookExcerpt(content: string): string {
+  return content.trim().slice(-4000);
+}
+
+function AiSeat({
+  onClose,
+  textTitle,
+  notebookContent,
+}: {
+  onClose: () => void;
+  textTitle: string;
+  notebookContent: string;
+}) {
+  const [mode, setMode] = useState<AiMode>("explainer");
+  const [apiKey, setApiKey] = useState(() => {
+    try {
+      return window.localStorage.getItem(AI_KEY_STORAGE) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [rememberKey, setRememberKey] = useState(() => Boolean(apiKey));
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
-  const [response, setResponse] = useState<string | null>(null);
-  const [costUsd, setCostUsd] = useState<number | null>(null);
+  const [response, setResponse] = useState<ThirdSeatAnswer | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  function ask() {
+  useEffect(() => {
+    try {
+      if (rememberKey && apiKey.trim()) window.localStorage.setItem(AI_KEY_STORAGE, apiKey.trim());
+      else window.localStorage.removeItem(AI_KEY_STORAGE);
+    } catch {}
+  }, [apiKey, rememberKey]);
+
+  async function ask() {
+    const key = apiKey.trim();
+    const question = prompt.trim();
+    if (!key || !question) return;
     setBusy(true);
     setResponse(null);
-    // The real product calls Anthropic directly with the user's key. For the
-    // prototype we simulate the AI so the UX is testable without a key.
-    setTimeout(() => {
-      const sims: Record<string, string> = {
-        explainer:
-          "By 'slave morality' Nietzsche means a value system born of ressentiment — the powerless reframe their lack of power as virtue, and the strong's vitality as evil. Compare with First Essay §10.",
-        devil:
-          "Steel-man the opposite reading: perhaps Nietzsche is not approving noble morality but observing it. The text's irony cuts both ways — and Yael's reading underweights how often Nietzsche distances himself from his own enthusiasms.",
-        source:
-          "The word 'ressentiment' appears 14 times across the Genealogy. Densest cluster: First Essay §10–11. See also Beyond Good and Evil §260 for an earlier sketch of the same opposition.",
-      };
-      setResponse(sims[mode]);
-      setCostUsd(0.003);
+    setErr(null);
+    try {
+      const answer = await askThirdSeat({
+        apiKey: key,
+        mode,
+        prompt: question,
+        textTitle,
+        notebookExcerpt: lastNotebookExcerpt(notebookContent),
+      });
+      setResponse(answer);
+    } catch (e: any) {
+      setErr(e.message || "Claude could not answer.");
+    } finally {
       setBusy(false);
-    }, 700);
+    }
   }
 
   return (
-    <div className="border-t border-border bg-card">
+    <div className="border-t border-border bg-card max-h-[45vh] overflow-y-auto">
       <div className="px-6 py-3 flex items-center justify-between">
-        <span className="smallcaps">ai third seat</span>
+        <div>
+          <span className="smallcaps">ai third seat</span>
+          <p className="text-[11px] text-muted-foreground tabular mt-1">{CLAUDE_MODEL}</p>
+        </div>
         <button
           onClick={onClose}
           className="text-xs text-muted-foreground hover:text-foreground"
@@ -340,6 +435,50 @@ function AiSeat({ onClose }: { onClose: () => void }) {
         >
           close
         </button>
+      </div>
+
+      <div className="px-6 pb-3 grid gap-2">
+        <label className="smallcaps" htmlFor="anthropic-key">
+          anthropic key
+        </label>
+        <input
+          id="anthropic-key"
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="sk-ant-..."
+          autoComplete="off"
+          data-testid="input-anthropic-key"
+          className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
+        />
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={rememberKey}
+              onChange={(e) => setRememberKey(e.target.checked)}
+              className="accent-primary"
+              data-testid="checkbox-remember-ai-key"
+            />
+            remember on this device
+          </label>
+          {apiKey && (
+            <button
+              type="button"
+              onClick={() => {
+                setApiKey("");
+                setRememberKey(false);
+              }}
+              className="underline underline-offset-4"
+              data-testid="button-forget-ai-key"
+            >
+              forget key
+            </button>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground italic">
+          Your key is sent from this browser to Anthropic for this request. Pilpul does not store it.
+        </p>
       </div>
 
       <div className="px-6 pb-3 flex flex-wrap gap-2 text-xs">
@@ -359,14 +498,11 @@ function AiSeat({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="px-6 pb-4">
-        <p className="text-xs text-muted-foreground italic mb-2">
-          Prototype simulation. BYOK billing is not connected yet.
-        </p>
         <div className="flex gap-2">
           <input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && prompt && ask()}
+            onKeyDown={(e) => e.key === "Enter" && prompt.trim() && apiKey.trim() && ask()}
             placeholder={
               mode === "explainer"
                 ? "What does Nietzsche mean by 'slave morality' here?"
@@ -379,21 +515,27 @@ function AiSeat({ onClose }: { onClose: () => void }) {
           />
           <button
             onClick={ask}
-            disabled={busy || !prompt}
+            disabled={busy || !prompt.trim() || !apiKey.trim()}
             data-testid="button-ask-ai"
             className="px-4 py-2 border border-border bg-background hover-elevate active-elevate-2 rounded-sm font-serif italic text-sm"
           >
             {busy ? "thinking…" : "ask"}
           </button>
         </div>
+        {err && (
+          <p className="mt-3 text-sm text-destructive" data-testid="text-ai-error">
+            {err}
+          </p>
+        )}
         {response && (
           <div className="mt-3" data-testid="text-ai-response">
-            <p className="font-serif italic text-[0.95rem] leading-relaxed">{response}</p>
-            {costUsd !== null && (
-              <p className="text-[10px] text-muted-foreground mt-2 tabular">
-                ${costUsd.toFixed(3)} used.
-              </p>
-            )}
+            <p className="font-serif italic text-[0.95rem] leading-relaxed whitespace-pre-wrap">
+              {response.text}
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-2 tabular">
+              ~${response.estimatedCostUsd.toFixed(4)} used · {response.inputTokens} in ·{" "}
+              {response.outputTokens} out
+            </p>
           </div>
         )}
       </div>

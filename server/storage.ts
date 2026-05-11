@@ -14,6 +14,7 @@ import type {
   StudySession,
   User,
 } from "@shared/schema";
+import type { RateLimitResult } from "./rate-limit";
 
 type DbUser = {
   id: string;
@@ -110,6 +111,13 @@ type DbEmailMagicLink = {
   expires_at: string;
   used_at: string | null;
   created_at: string;
+};
+
+type DbRateLimitResult = {
+  allowed: boolean;
+  count: number;
+  remaining: number;
+  reset_at: string;
 };
 
 type DbReport = {
@@ -313,6 +321,12 @@ export interface IStorage {
     tokenHash: string,
     now: string
   ): Promise<{ email: string; redirectPath: string | null } | undefined>;
+  consumeRateLimit(args: {
+    key: string;
+    action: string;
+    limit: number;
+    windowSeconds: number;
+  }): Promise<RateLimitResult>;
 
   createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText>;
   listReadingTextsForUser(userId: string): Promise<ReadingText[]>;
@@ -340,7 +354,7 @@ export interface IStorage {
   getActivePairingForUser(userId: string): Promise<Pairing | undefined>;
   getPairingsForUser(userId: string): Promise<Pairing[]>;
   getPairing(id: string): Promise<Pairing | undefined>;
-  updateNotebook(pairingId: string, content: string): Promise<Pairing | undefined>;
+  updateNotebook(pairingId: string, content: string, expectedUpdatedAt?: string | null): Promise<Pairing | undefined>;
   endPairing(id: string, status: "completed" | "dissolved"): Promise<void>;
   countActivePairings(): Promise<number>;
   countCompletedThisWeek(): Promise<number>;
@@ -461,6 +475,32 @@ export class SupabaseStorage implements IStorage {
       .maybeSingle<DbEmailMagicLink>();
     throwDb(error, "consume email magic link");
     return data ? { email: data.email, redirectPath: data.redirect_path } : undefined;
+  }
+
+  async consumeRateLimit(args: {
+    key: string;
+    action: string;
+    limit: number;
+    windowSeconds: number;
+  }): Promise<RateLimitResult> {
+    const bucketMs = args.windowSeconds * 1000;
+    const windowStart = new Date(Math.floor(Date.now() / bucketMs) * bucketMs).toISOString();
+    const { data, error } = await this.db.rpc("consume_rate_limit", {
+      p_key: args.key,
+      p_action: args.action,
+      p_window_start: windowStart,
+      p_window_seconds: args.windowSeconds,
+      p_limit: args.limit,
+    });
+    throwDb(error, "consume rate limit");
+
+    const row = Array.isArray(data) ? (data[0] as DbRateLimitResult | undefined) : undefined;
+    return {
+      allowed: Boolean(row?.allowed),
+      count: Number(row?.count ?? 0),
+      remaining: Number(row?.remaining ?? 0),
+      resetAt: row?.reset_at ?? new Date(Date.now() + args.windowSeconds * 1000).toISOString(),
+    };
   }
 
   async createReadingText(userId: string, data: CreateReadingText): Promise<ReadingText> {
@@ -675,11 +715,14 @@ export class SupabaseStorage implements IStorage {
     return data ? mapPairing(data) : undefined;
   }
 
-  async updateNotebook(pairingId: string, content: string): Promise<Pairing | undefined> {
-    const { data, error } = await this.db
+  async updateNotebook(pairingId: string, content: string, expectedUpdatedAt?: string | null): Promise<Pairing | undefined> {
+    let query = this.db
       .from("pairings")
       .update({ notebook_content: content, notebook_updated_at: nowIso() })
-      .eq("id", pairingId)
+      .eq("id", pairingId);
+    if (expectedUpdatedAt) query = query.eq("notebook_updated_at", expectedUpdatedAt);
+
+    const { data, error } = await query
       .select("*")
       .maybeSingle<DbPairing>();
     throwDb(error, "update notebook");

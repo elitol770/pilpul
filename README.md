@@ -9,7 +9,7 @@ A calm, paper/ink web app pairing two people anywhere for sustained one-on-one s
 - wouter v3 (hash routing for iframe compatibility)
 - TanStack Query
 - Jitsi public meet embed for audio
-- AI third seat — currently simulated (canned responses); BYOK Anthropic input is wired in the UI but not connected to the real API
+- AI third seat with bring-your-own Anthropic key, called directly from the browser
 
 ## Run locally
 
@@ -33,8 +33,11 @@ NODE_ENV=production node dist/index.cjs
 
 Sign-in uses short-lived, one-time magic links sent through Resend. The link
 returns to `/#/auth/callback`, where the app verifies the token and links the
-browser's visitor id to the Supabase user record. Local development can expose a
-dev sign-in link when Resend is not configured.
+browser to the Supabase user record with an HttpOnly session cookie. Local
+development can expose a dev sign-in link when Resend is not configured.
+
+High-risk endpoints use database-backed rate limits in Supabase so counters
+survive Cloudflare isolate restarts.
 
 ## Demo seed
 
@@ -75,4 +78,4 @@ Greedy matcher in `server/matching.ts`:
 - Curated rounds
 - Stripe credit wrapper
 - Real Sefaria/Gutenberg integration (texts hardcoded in `client/src/lib/texts.ts`)
-- Real Anthropic API call for AI third seat
+- Yjs or another true CRDT for collaborative notes

@@ -31,6 +31,13 @@ import {
   normalizeRedirectPath,
   sendMagicLinkEmail,
 } from "../../server/email";
+import {
+  clearSessionCookie,
+  createSessionId,
+  sessionCookie,
+  sessionIdFromHeaders,
+} from "../../server/session";
+import { clientIpFromHeaders, rateLimitKey, type RateLimitPolicy } from "../../server/rate-limit";
 
 type Env = {
   SUPABASE_URL?: string;
@@ -48,11 +55,25 @@ type PagesContext = {
   env: Env;
 };
 
-function json(body: unknown, status = 200): Response {
+const LIMITS = {
+  magicLinkIp: { limit: 5, windowSeconds: 10 * 60 },
+  magicLinkEmail: { limit: 3, windowSeconds: 15 * 60 },
+  verifyIp: { limit: 20, windowSeconds: 10 * 60 },
+  profileUser: { limit: 20, windowSeconds: 60 * 60 },
+  textImportUser: { limit: 10, windowSeconds: 60 * 60 },
+  requestUser: { limit: 10, windowSeconds: 60 * 60 },
+  acceptUser: { limit: 30, windowSeconds: 60 * 60 },
+  inviteUser: { limit: 20, windowSeconds: 60 * 60 },
+  reportUser: { limit: 5, windowSeconds: 24 * 60 * 60 },
+  demoUser: { limit: 5, windowSeconds: 24 * 60 * 60 },
+} satisfies Record<string, RateLimitPolicy>;
+
+function json(body: unknown, status = 200, extraHeaders?: HeadersInit): Response {
   return Response.json(body, {
     status,
     headers: {
       "Cache-Control": "no-store",
+      ...(extraHeaders ?? {}),
     },
   });
 }
@@ -62,12 +83,35 @@ async function readJson(request: Request): Promise<unknown> {
   return await request.json();
 }
 
-function getVisitorId(request: Request): string {
-  return request.headers.get("x-visitor-id") || "anon";
+function getSessionId(request: Request): string | null {
+  return sessionIdFromHeaders(request.headers);
+}
+
+async function rateLimitResponse(
+  store: IStorage,
+  action: string,
+  identifier: string,
+  policy: RateLimitPolicy
+): Promise<Response | null> {
+  const result = await store.consumeRateLimit({
+    key: await rateLimitKey(action, identifier),
+    action,
+    limit: policy.limit,
+    windowSeconds: policy.windowSeconds,
+  });
+  if (result.allowed) return null;
+
+  const retryAfter = Math.max(1, Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000));
+  return json(
+    { message: "Too many attempts. Try again later." },
+    429,
+    { "Retry-After": String(retryAfter) }
+  );
 }
 
 async function getCurrentUser(store: IStorage, request: Request) {
-  return await store.getUserForVisitor(getVisitorId(request));
+  const sessionId = getSessionId(request);
+  return sessionId ? await store.getUserForVisitor(sessionId) : undefined;
 }
 
 async function requireUser(store: IStorage, request: Request) {
@@ -179,6 +223,16 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
 
       const email = parse.data.email.toLowerCase();
+      const ipBlock = await rateLimitResponse(
+        store,
+        "magic-link:ip",
+        clientIpFromHeaders(request.headers),
+        LIMITS.magicLinkIp
+      );
+      if (ipBlock) return ipBlock;
+      const emailBlock = await rateLimitResponse(store, "magic-link:email", email, LIMITS.magicLinkEmail);
+      if (emailBlock) return emailBlock;
+
       const token = createMagicToken();
       await store.createEmailMagicLink({
         tokenHash: await hashMagicToken(token),
@@ -201,6 +255,14 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     }
 
     if (request.method === "POST" && path === "/auth/verify") {
+      const ipBlock = await rateLimitResponse(
+        store,
+        "auth-verify:ip",
+        clientIpFromHeaders(request.headers),
+        LIMITS.verifyIp
+      );
+      if (ipBlock) return ipBlock;
+
       const parse = verifyMagicLinkSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
 
@@ -211,8 +273,13 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (!consumed) return json({ message: "This sign-in link is invalid or expired." }, 400);
 
       const user = await store.upsertUserByEmail(consumed.email);
-      await store.linkVisitorToUser(getVisitorId(request), user.id);
-      return json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) });
+      const sessionId = createSessionId();
+      await store.linkVisitorToUser(sessionId, user.id);
+      return json(
+        { user, redirectPath: normalizeRedirectPath(consumed.redirectPath) },
+        200,
+        { "Set-Cookie": sessionCookie(sessionId, request.url) }
+      );
     }
 
     if (request.method === "POST" && path === "/claim-email") {
@@ -222,19 +289,34 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       const parse = claimEmailSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
 
-      const user = await store.upsertUserByEmail(parse.data.email);
-      await store.linkVisitorToUser(getVisitorId(request), user.id);
-      return json({ user });
+      const email = parse.data.email.toLowerCase();
+      const ipBlock = await rateLimitResponse(
+        store,
+        "claim-email:ip",
+        clientIpFromHeaders(request.headers),
+        LIMITS.magicLinkIp
+      );
+      if (ipBlock) return ipBlock;
+      const emailBlock = await rateLimitResponse(store, "claim-email:email", email, LIMITS.magicLinkEmail);
+      if (emailBlock) return emailBlock;
+
+      const user = await store.upsertUserByEmail(email);
+      const sessionId = createSessionId();
+      await store.linkVisitorToUser(sessionId, user.id);
+      return json({ user }, 200, { "Set-Cookie": sessionCookie(sessionId, request.url) });
     }
 
     if (request.method === "POST" && path === "/sign-out") {
-      await store.unlinkVisitor(getVisitorId(request));
-      return json({ ok: true });
+      const sessionId = getSessionId(request);
+      if (sessionId) await store.unlinkVisitor(sessionId);
+      return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(request.url) });
     }
 
     if (request.method === "PATCH" && path === "/me") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
+      const limit = await rateLimitResponse(store, "profile:update", auth.user.id, LIMITS.profileUser);
+      if (limit) return limit;
 
       const parse = profileSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
@@ -254,6 +336,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/texts/upload") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
+      const limit = await rateLimitResponse(store, "texts:upload", auth.user.id, LIMITS.textImportUser);
+      if (limit) return limit;
 
       const form = await request.formData();
       const file = form.get("file");
@@ -278,6 +362,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/texts/fetch") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
+      const limit = await rateLimitResponse(store, "texts:fetch", auth.user.id, LIMITS.textImportUser);
+      if (limit) return limit;
 
       const parse = fetchPdfSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
@@ -345,6 +431,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "requests:create", auth.user.id, LIMITS.requestUser);
+      if (limit) return limit;
 
       const parse = insertRequestSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
@@ -364,6 +452,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "requests:accept", auth.user.id, LIMITS.acceptUser);
+      if (limit) return limit;
 
       const partnerRequest = await store.getOpenRequestWithUser(segments[1]);
       if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
@@ -392,6 +482,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "invites:create", auth.user.id, LIMITS.inviteUser);
+      if (limit) return limit;
 
       const parse = createInviteSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
@@ -416,6 +508,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "invites:accept", auth.user.id, LIMITS.acceptUser);
+      if (limit) return limit;
 
       const invite = await store.getDirectInviteByToken(segments[1]);
       if (!invite) return json({ message: "Invite not found" }, 404);
@@ -530,6 +624,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "demo:seed-partner", auth.user.id, LIMITS.demoUser);
+      if (limit) return limit;
 
       const body = (await readJson(request)) as Record<string, unknown>;
       const partnerEmail = `demo-${Date.now()}@pilpul.local`;
@@ -603,9 +699,25 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         }
 
         if (request.method === "PUT") {
-          const parse = z.object({ content: z.string() }).safeParse(await readJson(request));
+          const parse = z
+            .object({
+              content: z.string().max(200_000, "Notebook is too large"),
+              baseUpdatedAt: z.string().nullable().optional(),
+            })
+            .safeParse(await readJson(request));
           if (!parse.success) return json({ message: "Invalid body" }, 400);
-          const updated = await store.updateNotebook(pairing.id, parse.data.content);
+          const updated = await store.updateNotebook(pairing.id, parse.data.content, parse.data.baseUpdatedAt);
+          if (!updated && parse.data.baseUpdatedAt) {
+            const current = await store.getPairing(pairing.id);
+            return json(
+              {
+                message: "Notebook changed on another device.",
+                content: current?.notebookContent ?? "",
+                updatedAt: current?.notebookUpdatedAt ?? null,
+              },
+              409
+            );
+          }
           return json({
             content: updated?.notebookContent ?? "",
             updatedAt: updated?.notebookUpdatedAt ?? null,
@@ -621,6 +733,9 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       }
 
       if (request.method === "POST" && segments[2] === "report") {
+        const limit = await rateLimitResponse(store, "reports:create", auth.user.id, LIMITS.reportUser);
+        if (limit) return limit;
+
         const parse = createReportSchema.safeParse(await readJson(request));
         if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
         const report = await store.createReport(auth.user.id, pairing.id, parse.data);

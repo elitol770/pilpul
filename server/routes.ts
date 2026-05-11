@@ -32,22 +32,65 @@ import {
   normalizeRedirectPath,
   sendMagicLinkEmail,
 } from "./email";
+import {
+  clearSessionCookie,
+  createSessionId,
+  sessionCookie,
+  sessionIdFromRequestLike,
+} from "./session";
+import { clientIpFromRequestLike, rateLimitKey, type RateLimitPolicy } from "./rate-limit";
 
 const storage = getStorage();
 
+const LIMITS = {
+  magicLinkIp: { limit: 5, windowSeconds: 10 * 60 },
+  magicLinkEmail: { limit: 3, windowSeconds: 15 * 60 },
+  verifyIp: { limit: 20, windowSeconds: 10 * 60 },
+  profileUser: { limit: 20, windowSeconds: 60 * 60 },
+  textImportUser: { limit: 10, windowSeconds: 60 * 60 },
+  requestUser: { limit: 10, windowSeconds: 60 * 60 },
+  acceptUser: { limit: 30, windowSeconds: 60 * 60 },
+  inviteUser: { limit: 20, windowSeconds: 60 * 60 },
+  reportUser: { limit: 5, windowSeconds: 24 * 60 * 60 },
+  demoUser: { limit: 5, windowSeconds: 24 * 60 * 60 },
+} satisfies Record<string, RateLimitPolicy>;
+
 // ---------- Identity ----------
 //
-// The prototype identifies a person by an X-Visitor-Id header from the client.
-// That visitor id is persisted in Supabase so a deploy/restart does not wipe
-// the lightweight demo session mapping.
+// New sessions use a server-issued HttpOnly cookie. The older X-Visitor-Id
+// header remains as a temporary compatibility fallback for existing browsers.
 
-function getVisitorId(req: Request): string {
-  const v = (req.headers["x-visitor-id"] as string) || "";
-  return v || "anon";
+function getSessionId(req: Request): string | null {
+  return sessionIdFromRequestLike(req.headers as Record<string, string | string[] | undefined>);
+}
+
+function clientIp(req: Request): string {
+  return clientIpFromRequestLike(req.headers as Record<string, string | string[] | undefined>, req.ip);
+}
+
+async function enforceRateLimit(
+  res: Response,
+  action: string,
+  identifier: string,
+  policy: RateLimitPolicy
+): Promise<boolean> {
+  const result = await storage.consumeRateLimit({
+    key: await rateLimitKey(action, identifier),
+    action,
+    limit: policy.limit,
+    windowSeconds: policy.windowSeconds,
+  });
+  if (result.allowed) return true;
+
+  const retryAfter = Math.max(1, Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000));
+  res.setHeader("Retry-After", String(retryAfter));
+  res.status(429).json({ message: "Too many attempts. Try again later." });
+  return false;
 }
 
 async function getCurrentUser(req: Request) {
-  return await storage.getUserForVisitor(getVisitorId(req));
+  const sessionId = getSessionId(req);
+  return sessionId ? await storage.getUserForVisitor(sessionId) : undefined;
 }
 
 async function requireUser(req: Request, res: Response, next: NextFunction) {
@@ -150,6 +193,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     const email = parse.data.email.toLowerCase();
+    if (!(await enforceRateLimit(res, "magic-link:ip", clientIp(req), LIMITS.magicLinkIp))) return;
+    if (!(await enforceRateLimit(res, "magic-link:email", email, LIMITS.magicLinkEmail))) return;
+
     const token = createMagicToken();
     await storage.createEmailMagicLink({
       tokenHash: await hashMagicToken(token),
@@ -175,6 +221,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/auth/verify", async (req, res) => {
+    if (!(await enforceRateLimit(res, "auth-verify:ip", clientIp(req), LIMITS.verifyIp))) return;
+
     const parse = verifyMagicLinkSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
@@ -186,7 +234,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     const user = await storage.upsertUserByEmail(consumed.email);
-    await storage.linkVisitorToUser(getVisitorId(req), user.id);
+    const sessionId = createSessionId();
+    await storage.linkVisitorToUser(sessionId, user.id);
+    res.setHeader(
+      "Set-Cookie",
+      sessionCookie(sessionId, `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+    );
     res.json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) });
   });
 
@@ -198,18 +251,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
     }
-    const user = await storage.upsertUserByEmail(parse.data.email);
-    await storage.linkVisitorToUser(getVisitorId(req), user.id);
+    const email = parse.data.email.toLowerCase();
+    if (!(await enforceRateLimit(res, "claim-email:ip", clientIp(req), LIMITS.magicLinkIp))) return;
+    if (!(await enforceRateLimit(res, "claim-email:email", email, LIMITS.magicLinkEmail))) return;
+    const user = await storage.upsertUserByEmail(email);
+    const sessionId = createSessionId();
+    await storage.linkVisitorToUser(sessionId, user.id);
+    res.setHeader(
+      "Set-Cookie",
+      sessionCookie(sessionId, `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+    );
     res.json({ user });
   });
 
   app.post("/api/sign-out", async (req, res) => {
-    await storage.unlinkVisitor(getVisitorId(req));
+    const sessionId = getSessionId(req);
+    if (sessionId) await storage.unlinkVisitor(sessionId);
+    res.setHeader(
+      "Set-Cookie",
+      clearSessionCookie(`${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+    );
     res.json({ ok: true });
   });
 
   app.patch("/api/me", requireUser, async (req, res) => {
     const user = (req as any).user;
+    if (!(await enforceRateLimit(res, "profile:update", user.id, LIMITS.profileUser))) return;
+
     const parse = profileSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
@@ -233,6 +301,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/texts/fetch", requireUser, async (req, res) => {
     const user = (req as any).user;
+    if (!(await enforceRateLimit(res, "texts:fetch", user.id, LIMITS.textImportUser))) return;
+
     const parse = fetchPdfSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
@@ -286,6 +356,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/requests", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "requests:create", user.id, LIMITS.requestUser))) return;
+
     const parse = insertRequestSchema.safeParse(req.body);
     if (!parse.success) {
       return res.status(400).json({ message: parse.error.issues[0].message });
@@ -304,6 +376,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/requests/:id/accept", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "requests:accept", user.id, LIMITS.acceptUser))) return;
 
     const partnerRequest = await storage.getOpenRequestWithUser(String(req.params.id));
     if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
@@ -333,6 +406,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/invites", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "invites:create", user.id, LIMITS.inviteUser))) return;
 
     const parse = createInviteSchema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ message: parse.error.issues[0].message });
@@ -355,6 +429,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/invites/:token/accept", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "invites:accept", user.id, LIMITS.acceptUser))) return;
 
     const invite = await storage.getDirectInviteByToken(String(req.params.token));
     if (!invite) return res.status(404).json({ message: "Invite not found" });
@@ -494,9 +569,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!pairing || (pairing.userAId !== user.id && pairing.userBId !== user.id)) {
       return res.status(404).json({ message: "Not found" });
     }
-    const parse = z.object({ content: z.string() }).safeParse(req.body);
+    const parse = z
+      .object({
+        content: z.string().max(200_000, "Notebook is too large"),
+        baseUpdatedAt: z.string().nullable().optional(),
+      })
+      .safeParse(req.body);
     if (!parse.success) return res.status(400).json({ message: "Invalid body" });
-    const updated = await storage.updateNotebook(pairing.id, parse.data.content);
+    const updated = await storage.updateNotebook(pairing.id, parse.data.content, parse.data.baseUpdatedAt);
+    if (!updated && parse.data.baseUpdatedAt) {
+      const current = await storage.getPairing(pairing.id);
+      return res.status(409).json({
+        message: "Notebook changed on another device.",
+        content: current?.notebookContent ?? "",
+        updatedAt: current?.notebookUpdatedAt ?? null,
+      });
+    }
     res.json({
       content: updated?.notebookContent ?? "",
       updatedAt: updated?.notebookUpdatedAt ?? null,
@@ -517,6 +605,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/pairings/:id/report", requireUser, async (req, res) => {
     const user = (req as any).user;
+    if (!(await enforceRateLimit(res, "reports:create", user.id, LIMITS.reportUser))) return;
+
     const pid = String(req.params.id);
     const pairing = await storage.getPairing(pid);
     if (!pairing || (pairing.userAId !== user.id && pairing.userBId !== user.id)) {
@@ -543,6 +633,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/demo/seed-partner", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "demo:seed-partner", user.id, LIMITS.demoUser))) return;
+
     const partnerEmail = `demo-${Date.now()}@pilpul.local`;
     const partner = await storage.upsertUserByEmail(partnerEmail);
     await storage.updateUserProfile(partner.id, {
