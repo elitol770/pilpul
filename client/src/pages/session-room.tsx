@@ -5,7 +5,14 @@ import { ExternalLink, Mic, Video, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { findText } from "@/lib/texts";
 import { useAuth } from "@/lib/auth";
-import { askThirdSeat, CLAUDE_MODEL, type AiMode, type ThirdSeatAnswer } from "@/lib/ai";
+import {
+  askThirdSeat,
+  CLAUDE_MODEL,
+  OPENAI_MODEL,
+  type AiMode,
+  type AiProvider,
+  type ThirdSeatAnswer,
+} from "@/lib/ai";
 import type { ReadingText } from "@shared/schema";
 
 type RoomData = {
@@ -362,10 +369,37 @@ function Notebook({
 
 // -----------------------------------------------------------------------------
 
-const AI_KEY_STORAGE = "pilpul_anthropic_key";
+const AI_PROVIDER_STORAGE = "pilpul_ai_provider";
+const AI_KEYS_STORAGE = {
+  anthropic: "pilpul_anthropic_key",
+  openai: "pilpul_openai_key",
+  compatible: "pilpul_compatible_key",
+} satisfies Record<AiProvider, string>;
+const AI_COMPATIBLE_BASE_STORAGE = "pilpul_compatible_base_url";
+const AI_COMPATIBLE_MODEL_STORAGE = "pilpul_compatible_model";
+
+const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  compatible: "compatible",
+};
 
 function lastNotebookExcerpt(content: string): string {
   return content.trim().slice(-4000);
+}
+
+function storedValue(key: string, fallback = ""): string {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function defaultModel(provider: AiProvider): string {
+  if (provider === "openai") return OPENAI_MODEL;
+  if (provider === "anthropic") return CLAUDE_MODEL;
+  return storedValue(AI_COMPATIBLE_MODEL_STORAGE, "");
 }
 
 function AiSeat({
@@ -378,13 +412,19 @@ function AiSeat({
   notebookContent: string;
 }) {
   const [mode, setMode] = useState<AiMode>("explainer");
-  const [apiKey, setApiKey] = useState(() => {
-    try {
-      return window.localStorage.getItem(AI_KEY_STORAGE) || "";
-    } catch {
-      return "";
-    }
+  const [provider, setProvider] = useState<AiProvider>(() => {
+    const stored = storedValue(AI_PROVIDER_STORAGE);
+    return stored === "openai" || stored === "compatible" ? stored : "anthropic";
   });
+  const [apiKey, setApiKey] = useState(() => {
+    const storedProvider = storedValue(AI_PROVIDER_STORAGE);
+    const initialProvider: AiProvider = storedProvider === "openai" || storedProvider === "compatible" ? storedProvider : "anthropic";
+    return storedValue(AI_KEYS_STORAGE[initialProvider]);
+  });
+  const [model, setModel] = useState(() => defaultModel(provider));
+  const [compatibleBaseUrl, setCompatibleBaseUrl] = useState(() =>
+    storedValue(AI_COMPATIBLE_BASE_STORAGE, "https://openrouter.ai/api/v1")
+  );
   const [rememberKey, setRememberKey] = useState(() => Boolean(apiKey));
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -393,10 +433,23 @@ function AiSeat({
 
   useEffect(() => {
     try {
-      if (rememberKey && apiKey.trim()) window.localStorage.setItem(AI_KEY_STORAGE, apiKey.trim());
-      else window.localStorage.removeItem(AI_KEY_STORAGE);
+      window.localStorage.setItem(AI_PROVIDER_STORAGE, provider);
+      if (rememberKey && apiKey.trim()) window.localStorage.setItem(AI_KEYS_STORAGE[provider], apiKey.trim());
+      else window.localStorage.removeItem(AI_KEYS_STORAGE[provider]);
+      if (provider === "compatible") {
+        window.localStorage.setItem(AI_COMPATIBLE_BASE_STORAGE, compatibleBaseUrl.trim());
+        window.localStorage.setItem(AI_COMPATIBLE_MODEL_STORAGE, model.trim());
+      }
     } catch {}
-  }, [apiKey, rememberKey]);
+  }, [apiKey, compatibleBaseUrl, model, provider, rememberKey]);
+
+  function chooseProvider(next: AiProvider) {
+    setProvider(next);
+    setApiKey(storedValue(AI_KEYS_STORAGE[next]));
+    setModel(defaultModel(next));
+    setErr(null);
+    setResponse(null);
+  }
 
   async function ask() {
     const key = apiKey.trim();
@@ -407,7 +460,10 @@ function AiSeat({
     setErr(null);
     try {
       const answer = await askThirdSeat({
+        provider,
         apiKey: key,
+        model,
+        baseUrl: provider === "compatible" ? compatibleBaseUrl : undefined,
         mode,
         prompt: question,
         textTitle,
@@ -426,7 +482,7 @@ function AiSeat({
       <div className="px-6 py-3 flex items-center justify-between">
         <div>
           <span className="smallcaps">ai third seat</span>
-          <p className="text-[11px] text-muted-foreground tabular mt-1">{CLAUDE_MODEL}</p>
+          <p className="text-[11px] text-muted-foreground tabular mt-1">{AI_PROVIDER_LABELS[provider]} · {model || "choose model"}</p>
         </div>
         <button
           onClick={onClose}
@@ -438,19 +494,68 @@ function AiSeat({
       </div>
 
       <div className="px-6 pb-3 grid gap-2">
-        <label className="smallcaps" htmlFor="anthropic-key">
-          anthropic key
-        </label>
-        <input
-          id="anthropic-key"
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-ant-..."
-          autoComplete="off"
-          data-testid="input-anthropic-key"
-          className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
-        />
+        <div className="flex flex-wrap gap-2 text-xs">
+          {(["anthropic", "openai", "compatible"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => chooseProvider(item)}
+              data-testid={`button-ai-provider-${item}`}
+              className={
+                "px-2.5 py-1 border rounded-sm " +
+                (provider === item ? "border-foreground" : "border-border text-muted-foreground")
+              }
+            >
+              {AI_PROVIDER_LABELS[item]}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+          <div>
+            <label className="smallcaps block mb-2" htmlFor="ai-model">
+              model
+            </label>
+            <input
+              id="ai-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={provider === "compatible" ? "provider-model-name" : defaultModel(provider)}
+              data-testid="input-ai-model"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label className="smallcaps block mb-2" htmlFor="ai-key">
+              api key
+            </label>
+            <input
+              id="ai-key"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={provider === "anthropic" ? "sk-ant-..." : "sk-..."}
+              autoComplete="off"
+              data-testid="input-ai-key"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
+            />
+          </div>
+        </div>
+        {provider === "compatible" && (
+          <div>
+            <label className="smallcaps block mb-2" htmlFor="compatible-base-url">
+              base url
+            </label>
+            <input
+              id="compatible-base-url"
+              value={compatibleBaseUrl}
+              onChange={(e) => setCompatibleBaseUrl(e.target.value)}
+              placeholder="https://openrouter.ai/api/v1"
+              data-testid="input-compatible-base-url"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
+            />
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <label className="inline-flex items-center gap-2">
             <input
@@ -477,7 +582,7 @@ function AiSeat({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground italic">
-          Your key is sent from this browser to Anthropic for this request. Pilpul does not store it.
+          Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request. Pilpul does not store it.
         </p>
       </div>
 
@@ -533,8 +638,10 @@ function AiSeat({
               {response.text}
             </p>
             <p className="text-[10px] text-muted-foreground mt-2 tabular">
-              ~${response.estimatedCostUsd.toFixed(4)} used · {response.inputTokens} in ·{" "}
-              {response.outputTokens} out
+              {response.estimatedCostUsd === null
+                ? "provider-billed"
+                : `~$${response.estimatedCostUsd.toFixed(4)} used`}{" "}
+              · {response.inputTokens} in · {response.outputTokens} out · {response.providerLabel}
             </p>
           </div>
         )}

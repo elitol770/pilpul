@@ -9,7 +9,7 @@ A calm, paper/ink web app pairing two people anywhere for sustained one-on-one s
 - wouter v3 (hash routing for iframe compatibility)
 - TanStack Query
 - Jitsi public meet embed for audio
-- AI third seat with bring-your-own Anthropic key, called directly from the browser
+- AI third seat with bring-your-own key for Anthropic, OpenAI, or OpenAI-compatible providers, called directly from the browser
 
 ## Run locally
 
