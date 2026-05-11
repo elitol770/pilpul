@@ -347,6 +347,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ request: open });
   });
 
+  app.get("/api/requests/mine/interests", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const [result, suspended] = await Promise.all([
+      storage.getPendingInterestsForUserOpenRequest(user.id),
+      storage.getSuspendedUserIds(),
+    ]);
+    res.json({
+      request: result.request,
+      interests: result.interests.filter((interest) => !suspended.has(interest.requesterId)),
+    });
+  });
+
   app.post("/api/requests/mine/close", requireUser, async (req, res) => {
     const user = (req as any).user;
     await storage.closeUserOpenRequest(user.id);
@@ -371,6 +383,97 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     // Try matching immediately so demo users see fast feedback.
     await runMatching();
     res.json({ request: r });
+  });
+
+  app.post("/api/requests/:id/interests", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "requests:interest", user.id, LIMITS.acceptUser))) return;
+
+    const partnerRequest = await storage.getOpenRequestWithUser(String(req.params.id));
+    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (partnerRequest.userId === user.id) {
+      return res.status(400).json({ message: "You cannot request your own listing." });
+    }
+
+    const partner = await storage.getUser(partnerRequest.userId);
+    if (!partner || partner.matchingSuspendedAt) {
+      return res.status(400).json({ message: "That request is no longer available." });
+    }
+
+    const interest = await storage.createRequestInterest(partnerRequest.id, user.id);
+    res.json({ interest });
+  });
+
+  app.post("/api/request-interests/:id/accept", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMatchingReady(user, res)) return;
+    if (!(await enforceRateLimit(res, "requests:interest-accept", user.id, LIMITS.acceptUser))) return;
+
+    const interest = await storage.getRequestInterest(String(req.params.id));
+    if (!interest || interest.status !== "pending") {
+      return res.status(404).json({ message: "That request is no longer pending." });
+    }
+
+    const partnerRequest = await storage.getOpenRequestWithUser(interest.requestId);
+    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (partnerRequest.userId !== user.id) {
+      return res.status(403).json({ message: "Only the request owner can accept this." });
+    }
+
+    const requester = await storage.getUser(interest.requesterId);
+    if (!requester || requester.matchingSuspendedAt) {
+      return res.status(400).json({ message: "That person is no longer available for matching." });
+    }
+
+    const accepted = await storage.setRequestInterestStatus(interest.id, "accepted");
+    if (!accepted) return res.status(409).json({ message: "That request is no longer pending." });
+
+    const pairing = await storage.createPairing({
+      userAId: partnerRequest.userId,
+      userBId: interest.requesterId,
+      textTitle: partnerRequest.textTitle,
+      textSourceId: partnerRequest.textSourceId,
+      pace: partnerRequest.pace,
+    });
+    await Promise.all([
+      storage.closeRequest(partnerRequest.id),
+      storage.closeUserOpenRequest(interest.requesterId),
+      storage.declineOtherPendingInterests(partnerRequest.id, interest.id),
+      storage.createSession(pairing.id),
+    ]);
+    res.json({ interest: accepted, pairing });
+  });
+
+  app.post("/api/request-interests/:id/decline", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const interest = await storage.getRequestInterest(String(req.params.id));
+    if (!interest || interest.status !== "pending") {
+      return res.status(404).json({ message: "That request is no longer pending." });
+    }
+
+    const partnerRequest = await storage.getOpenRequestWithUser(interest.requestId);
+    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (partnerRequest.userId !== user.id) {
+      return res.status(403).json({ message: "Only the request owner can decline this." });
+    }
+
+    const declined = await storage.setRequestInterestStatus(interest.id, "declined");
+    res.json({ interest: declined });
+  });
+
+  app.post("/api/request-interests/:id/cancel", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const interest = await storage.getRequestInterest(String(req.params.id));
+    if (!interest || interest.status !== "pending") {
+      return res.status(404).json({ message: "That request is no longer pending." });
+    }
+    if (interest.requesterId !== user.id) {
+      return res.status(403).json({ message: "Only the requester can cancel this." });
+    }
+
+    const cancelled = await storage.setRequestInterestStatus(interest.id, "cancelled");
+    res.json({ interest: cancelled });
   });
 
   app.post("/api/requests/:id/accept", requireUser, async (req, res) => {

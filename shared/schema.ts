@@ -26,6 +26,22 @@ export type Request = {
 
 export type RequestWithUser = Request & {
   user: Pick<User, "id" | "firstName" | "city" | "timezone">;
+  viewerInterestId?: string | null;
+  viewerInterestStatus?: RequestInterest["status"] | null;
+  pendingInterestCount?: number;
+};
+
+export type RequestInterest = {
+  id: string;
+  requestId: string;
+  requesterId: string;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  createdAt: string;
+  respondedAt: string | null;
+};
+
+export type RequestInterestWithRequester = RequestInterest & {
+  requester: Pick<User, "id" | "firstName" | "city" | "timezone">;
 };
 
 export type DirectInvite = {

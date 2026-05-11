@@ -10,6 +10,8 @@ import type {
   ReadingText,
   Report,
   Request as PartnerRequest,
+  RequestInterest,
+  RequestInterestWithRequester,
   RequestWithUser,
   StudySession,
   User,
@@ -41,6 +43,19 @@ type DbRequest = {
 };
 
 type DbRequestWithUser = DbRequest & {
+  users: DbUser | null;
+};
+
+type DbRequestInterest = {
+  id: string;
+  request_id: string;
+  requester_id: string;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  created_at: string;
+  responded_at: string | null;
+};
+
+type DbRequestInterestWithRequester = DbRequestInterest & {
   users: DbUser | null;
 };
 
@@ -217,6 +232,24 @@ function mapRequestWithUser(row: DbRequestWithUser): RequestWithUser {
   };
 }
 
+function mapRequestInterest(row: DbRequestInterest): RequestInterest {
+  return {
+    id: row.id,
+    requestId: row.request_id,
+    requesterId: row.requester_id,
+    status: row.status,
+    createdAt: row.created_at,
+    respondedAt: row.responded_at,
+  };
+}
+
+function mapRequestInterestWithRequester(row: DbRequestInterestWithRequester): RequestInterestWithRequester {
+  return {
+    ...mapRequestInterest(row),
+    requester: row.users ? mapPublicUser(row.users) : { id: row.requester_id, firstName: null, city: null, timezone: null },
+  };
+}
+
 function mapDirectInvite(row: DbDirectInvite): DirectInvite {
   return {
     id: row.id,
@@ -342,6 +375,18 @@ export interface IStorage {
   closeUserOpenRequest(userId: string): Promise<void>;
   countOpenRequests(): Promise<number>;
   getSuspendedUserIds(): Promise<Set<string>>;
+
+  createRequestInterest(requestId: string, requesterId: string): Promise<RequestInterest>;
+  getRequestInterest(id: string): Promise<RequestInterest | undefined>;
+  getPendingInterestsForUserOpenRequest(userId: string): Promise<{
+    request: PartnerRequest | null;
+    interests: RequestInterestWithRequester[];
+  }>;
+  setRequestInterestStatus(
+    id: string,
+    status: "accepted" | "declined" | "cancelled"
+  ): Promise<RequestInterest | undefined>;
+  declineOtherPendingInterests(requestId: string, acceptedInterestId: string): Promise<void>;
 
   createPairing(args: {
     userAId: string;
@@ -600,7 +645,38 @@ export class SupabaseStorage implements IStorage {
     if (excludeUserId) query = query.neq("user_id", excludeUserId);
     const { data, error } = await query;
     throwDb(error, "get open requests with users");
-    return (data ?? []).map((row) => mapRequestWithUser(row as DbRequestWithUser));
+    const requests = (data ?? []).map((row) => mapRequestWithUser(row as DbRequestWithUser));
+    if (!requests.length) return requests;
+
+    const { data: interests, error: interestError } = await this.db
+      .from("request_interests")
+      .select("id, request_id, requester_id, status")
+      .in(
+        "request_id",
+        requests.map((request) => request.id)
+      );
+    throwDb(interestError, "get request interest summaries");
+
+    const pendingCounts = new Map<string, number>();
+    const viewerIds = new Map<string, string>();
+    const viewerStatuses = new Map<string, RequestInterest["status"]>();
+    for (const interest of interests ?? []) {
+      const row = interest as Pick<DbRequestInterest, "id" | "request_id" | "requester_id" | "status">;
+      if (row.status === "pending") {
+        pendingCounts.set(row.request_id, (pendingCounts.get(row.request_id) ?? 0) + 1);
+      }
+      if (excludeUserId && row.requester_id === excludeUserId) {
+        viewerIds.set(row.request_id, row.id);
+        viewerStatuses.set(row.request_id, row.status);
+      }
+    }
+
+    return requests.map((request) => ({
+      ...request,
+      pendingInterestCount: pendingCounts.get(request.id) ?? 0,
+      viewerInterestId: viewerIds.get(request.id) ?? null,
+      viewerInterestStatus: viewerStatuses.get(request.id) ?? null,
+    }));
   }
 
   async getOpenRequestWithUser(requestId: string): Promise<RequestWithUser | undefined> {
@@ -657,6 +733,104 @@ export class SupabaseStorage implements IStorage {
       .not("matching_suspended_at", "is", null);
     throwDb(error, "get suspended users");
     return new Set((data ?? []).map((row) => String((row as { id: string }).id)));
+  }
+
+  async createRequestInterest(requestId: string, requesterId: string): Promise<RequestInterest> {
+    const existing = await this.getRequestInterestForRequester(requestId, requesterId);
+    if (existing && (existing.status === "pending" || existing.status === "accepted")) return existing;
+
+    if (existing) {
+      const { data, error } = await this.db
+        .from("request_interests")
+        .update({ status: "pending", responded_at: null })
+        .eq("id", existing.id)
+        .select("*")
+        .single<DbRequestInterest>();
+      throwDb(error, "reopen request interest");
+      return mapRequestInterest(requireRow(data, "reopen request interest"));
+    }
+
+    const { data, error } = await this.db
+      .from("request_interests")
+      .insert({
+        id: id(),
+        request_id: requestId,
+        requester_id: requesterId,
+        status: "pending",
+      })
+      .select("*")
+      .single<DbRequestInterest>();
+    throwDb(error, "create request interest");
+    return mapRequestInterest(requireRow(data, "create request interest"));
+  }
+
+  private async getRequestInterestForRequester(
+    requestId: string,
+    requesterId: string
+  ): Promise<RequestInterest | undefined> {
+    const { data, error } = await this.db
+      .from("request_interests")
+      .select("*")
+      .eq("request_id", requestId)
+      .eq("requester_id", requesterId)
+      .maybeSingle<DbRequestInterest>();
+    throwDb(error, "get request interest for requester");
+    return data ? mapRequestInterest(data) : undefined;
+  }
+
+  async getRequestInterest(interestId: string): Promise<RequestInterest | undefined> {
+    const { data, error } = await this.db
+      .from("request_interests")
+      .select("*")
+      .eq("id", interestId)
+      .maybeSingle<DbRequestInterest>();
+    throwDb(error, "get request interest");
+    return data ? mapRequestInterest(data) : undefined;
+  }
+
+  async getPendingInterestsForUserOpenRequest(userId: string): Promise<{
+    request: PartnerRequest | null;
+    interests: RequestInterestWithRequester[];
+  }> {
+    const request = (await this.getUserOpenRequest(userId)) ?? null;
+    if (!request) return { request, interests: [] };
+
+    const { data, error } = await this.db
+      .from("request_interests")
+      .select("*, users(*)")
+      .eq("request_id", request.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+    throwDb(error, "get pending request interests");
+    return {
+      request,
+      interests: (data ?? []).map((row) => mapRequestInterestWithRequester(row as DbRequestInterestWithRequester)),
+    };
+  }
+
+  async setRequestInterestStatus(
+    interestId: string,
+    status: "accepted" | "declined" | "cancelled"
+  ): Promise<RequestInterest | undefined> {
+    const { data, error } = await this.db
+      .from("request_interests")
+      .update({ status, responded_at: nowIso() })
+      .eq("id", interestId)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle<DbRequestInterest>();
+    throwDb(error, "set request interest status");
+    return data ? mapRequestInterest(data) : undefined;
+  }
+
+  async declineOtherPendingInterests(requestId: string, acceptedInterestId: string): Promise<void> {
+    const { error } = await this.db
+      .from("request_interests")
+      .update({ status: "declined", responded_at: nowIso() })
+      .eq("request_id", requestId)
+      .eq("status", "pending")
+      .neq("id", acceptedInterestId);
+    throwDb(error, "decline other request interests");
   }
 
   async createPairing(args: {

@@ -418,6 +418,20 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ request: open });
     }
 
+    if (request.method === "GET" && path === "/requests/mine/interests") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const [result, suspended] = await Promise.all([
+        store.getPendingInterestsForUserOpenRequest(auth.user.id),
+        store.getSuspendedUserIds(),
+      ]);
+      return json({
+        request: result.request,
+        interests: result.interests.filter((interest) => !suspended.has(interest.requesterId)),
+      });
+    }
+
     if (request.method === "POST" && path === "/requests/mine/close") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
@@ -445,6 +459,91 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       const partnerRequest = await store.createRequest(auth.user.id, parse.data);
       await runMatching(store);
       return json({ request: partnerRequest });
+    }
+
+    if (segments[0] === "requests" && segments[1] && segments[2] === "interests" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "requests:interest", auth.user.id, LIMITS.acceptUser);
+      if (limit) return limit;
+
+      const partnerRequest = await store.getOpenRequestWithUser(segments[1]);
+      if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
+      if (partnerRequest.userId === auth.user.id) return json({ message: "You cannot request your own listing." }, 400);
+
+      const partner = await store.getUser(partnerRequest.userId);
+      if (!partner || partner.matchingSuspendedAt) return json({ message: "That request is no longer available." }, 400);
+
+      const interest = await store.createRequestInterest(partnerRequest.id, auth.user.id);
+      return json({ interest });
+    }
+
+    if (segments[0] === "request-interests" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const matchingBlock = requireMatchingReady(auth.user);
+      if (matchingBlock) return matchingBlock;
+      const limit = await rateLimitResponse(store, "requests:interest-accept", auth.user.id, LIMITS.acceptUser);
+      if (limit) return limit;
+
+      const interest = await store.getRequestInterest(segments[1]);
+      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
+
+      const partnerRequest = await store.getOpenRequestWithUser(interest.requestId);
+      if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
+      if (partnerRequest.userId !== auth.user.id) return json({ message: "Only the request owner can accept this." }, 403);
+
+      const requester = await store.getUser(interest.requesterId);
+      if (!requester || requester.matchingSuspendedAt) {
+        return json({ message: "That person is no longer available for matching." }, 400);
+      }
+
+      const accepted = await store.setRequestInterestStatus(interest.id, "accepted");
+      if (!accepted) return json({ message: "That request is no longer pending." }, 409);
+
+      const pairing = await store.createPairing({
+        userAId: partnerRequest.userId,
+        userBId: interest.requesterId,
+        textTitle: partnerRequest.textTitle,
+        textSourceId: partnerRequest.textSourceId,
+        pace: partnerRequest.pace,
+      });
+      await Promise.all([
+        store.closeRequest(partnerRequest.id),
+        store.closeUserOpenRequest(interest.requesterId),
+        store.declineOtherPendingInterests(partnerRequest.id, interest.id),
+        store.createSession(pairing.id),
+      ]);
+      return json({ interest: accepted, pairing });
+    }
+
+    if (segments[0] === "request-interests" && segments[1] && segments[2] === "decline" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const interest = await store.getRequestInterest(segments[1]);
+      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
+
+      const partnerRequest = await store.getOpenRequestWithUser(interest.requestId);
+      if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
+      if (partnerRequest.userId !== auth.user.id) return json({ message: "Only the request owner can decline this." }, 403);
+
+      const declined = await store.setRequestInterestStatus(interest.id, "declined");
+      return json({ interest: declined });
+    }
+
+    if (segments[0] === "request-interests" && segments[1] && segments[2] === "cancel" && request.method === "POST") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+
+      const interest = await store.getRequestInterest(segments[1]);
+      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
+      if (interest.requesterId !== auth.user.id) return json({ message: "Only the requester can cancel this." }, 403);
+
+      const cancelled = await store.setRequestInterestStatus(interest.id, "cancelled");
+      return json({ interest: cancelled });
     }
 
     if (segments[0] === "requests" && segments[1] && segments[2] === "accept" && request.method === "POST") {

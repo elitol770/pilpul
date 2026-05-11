@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
+import { IncomingInterests } from "@/components/incoming-interests";
 import { PageShell } from "@/components/page-shell";
 import { useEffect, useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -84,6 +85,10 @@ export default function Queue() {
           <span className="text-foreground">{r.textTitle}</span> at a {r.pace} pace
           {r.scheduleWindows ? `, ${formatAvailabilitySummary(r.scheduleWindows)}` : ""}.
         </p>
+        <IncomingInterests
+          className="mt-10 text-left"
+          onAccepted={(pairing) => setLocation(`/room/${pairing.id}`)}
+        />
         <div className="rule mt-10 mb-6" />
         <p className="text-xs text-muted-foreground italic max-w-sm mx-auto">
           Your place is held. Check back later after you close this page.
