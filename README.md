@@ -90,6 +90,16 @@ npm run build
 NODE_ENV=production node dist/index.cjs
 ```
 
+## Secret Scan
+
+Before publishing the repository or accepting outside code:
+
+```bash
+npm run secrets:scan
+```
+
+The scanner checks tracked files and Git history for high-confidence API key patterns without printing secret values.
+
 ## Database
 
 Supabase migrations live in `supabase/migrations`.
@@ -154,7 +164,7 @@ At minimum:
 
 - Rotate any API keys that were ever pasted into a chat, terminal, issue, or local file.
 - Confirm only `.env.example` is tracked.
-- Confirm Supabase service role keys, Resend keys, and AI keys are not in Git history.
+- Run `npm run secrets:scan`.
 - Add screenshots.
 - Review `SECURITY.md`.
 - Review `CONTRIBUTING.md`.

@@ -56,6 +56,10 @@ Sensitive values include:
 
 Only `.env.example` should be tracked.
 
+For Cloudflare local development, keep secrets in `.dev.vars` or in Cloudflare dashboard secrets. `.dev.vars` must never be committed.
+
+Run `npm run secrets:scan` before making the repository public or before accepting outside pull requests. The scanner reports only file paths and commit ids, never the secret value.
+
 If a secret is exposed:
 
 1. Revoke or rotate it immediately.

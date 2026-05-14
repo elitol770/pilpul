@@ -59,6 +59,7 @@ Run these before opening a pull request:
 ```bash
 npm run check
 npm run build
+npm run secrets:scan
 ```
 
 If you touch dependencies or server behavior, also run:

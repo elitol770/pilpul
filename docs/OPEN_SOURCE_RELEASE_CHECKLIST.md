@@ -20,13 +20,14 @@ Use this before making the GitHub repository public.
 - [ ] Rotate Cloudflare tokens if they were ever pasted or exposed.
 - [ ] Confirm no Anthropic or OpenAI keys are in the repository.
 - [ ] Search current tracked files for obvious secrets.
-- [ ] Consider Git history scanning before public release.
+- [ ] Search Git history for obvious secrets.
+- [ ] Confirm local Cloudflare secrets are in `.dev.vars` or dashboard secrets, not tracked files.
 
 Suggested local checks:
 
 ```bash
 git ls-files .env .env.local .env.supabase.local .env.example
-git grep -n "SUPABASE_SERVICE_ROLE_KEY\\|RESEND_API_KEY\\|sk-ant-\\|sk-proj-\\|OPENAI_API_KEY"
+npm run secrets:scan
 ```
 
 ## Production

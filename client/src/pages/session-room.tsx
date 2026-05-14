@@ -692,6 +692,49 @@ function storedValue(key: string, fallback = ""): string {
   }
 }
 
+function sessionValue(key: string, fallback = ""): string {
+  try {
+    return window.sessionStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setSessionValue(key: string, value: string) {
+  try {
+    if (value) window.sessionStorage.setItem(key, value);
+    else window.sessionStorage.removeItem(key);
+  } catch {}
+}
+
+function setLocalValue(key: string, value: string) {
+  try {
+    if (value) window.localStorage.setItem(key, value);
+    else window.localStorage.removeItem(key);
+  } catch {}
+}
+
+function storedProvider(): AiProvider {
+  const stored = storedValue(AI_PROVIDER_STORAGE);
+  return stored === "openai" || stored === "compatible" ? stored : "anthropic";
+}
+
+function storedApiKey(provider: AiProvider): string {
+  const key = AI_KEYS_STORAGE[provider];
+  return sessionValue(key) || storedValue(key);
+}
+
+function hasRememberedApiKey(provider: AiProvider): boolean {
+  return Boolean(storedValue(AI_KEYS_STORAGE[provider]));
+}
+
+function persistApiKey(provider: AiProvider, apiKey: string, remember: boolean) {
+  const key = AI_KEYS_STORAGE[provider];
+  const value = apiKey.trim();
+  setSessionValue(key, value);
+  setLocalValue(key, remember ? value : "");
+}
+
 function defaultModel(provider: AiProvider): string {
   if (provider === "openai") return OPENAI_MODEL;
   if (provider === "anthropic") return CLAUDE_MODEL;
@@ -714,20 +757,13 @@ function AiSeat({
   notebookContent: string;
 }) {
   const [mode, setMode] = useState<AiMode>("explainer");
-  const [provider, setProvider] = useState<AiProvider>(() => {
-    const stored = storedValue(AI_PROVIDER_STORAGE);
-    return stored === "openai" || stored === "compatible" ? stored : "anthropic";
-  });
-  const [apiKey, setApiKey] = useState(() => {
-    const storedProvider = storedValue(AI_PROVIDER_STORAGE);
-    const initialProvider: AiProvider = storedProvider === "openai" || storedProvider === "compatible" ? storedProvider : "anthropic";
-    return storedValue(AI_KEYS_STORAGE[initialProvider]);
-  });
+  const [provider, setProvider] = useState<AiProvider>(() => storedProvider());
+  const [apiKey, setApiKey] = useState(() => storedApiKey(storedProvider()));
   const [model, setModel] = useState(() => defaultModel(provider));
   const [compatibleBaseUrl, setCompatibleBaseUrl] = useState(() =>
     storedValue(AI_COMPATIBLE_BASE_STORAGE, "https://openrouter.ai/api/v1")
   );
-  const [rememberKey, setRememberKey] = useState(() => Boolean(apiKey));
+  const [rememberKey, setRememberKey] = useState(() => hasRememberedApiKey(storedProvider()));
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<ThirdSeatAnswer | null>(null);
@@ -740,8 +776,7 @@ function AiSeat({
   useEffect(() => {
     try {
       window.localStorage.setItem(AI_PROVIDER_STORAGE, provider);
-      if (rememberKey && apiKey.trim()) window.localStorage.setItem(AI_KEYS_STORAGE[provider], apiKey.trim());
-      else window.localStorage.removeItem(AI_KEYS_STORAGE[provider]);
+      persistApiKey(provider, apiKey, rememberKey);
       if (provider === "compatible") {
         window.localStorage.setItem(AI_COMPATIBLE_BASE_STORAGE, compatibleBaseUrl.trim());
         window.localStorage.setItem(AI_COMPATIBLE_MODEL_STORAGE, model.trim());
@@ -751,7 +786,8 @@ function AiSeat({
 
   function chooseProvider(next: AiProvider) {
     setProvider(next);
-    setApiKey(storedValue(AI_KEYS_STORAGE[next]));
+    setApiKey(storedApiKey(next));
+    setRememberKey(hasRememberedApiKey(next));
     setModel(defaultModel(next));
     setErr(null);
     setResponse(null);
@@ -879,6 +915,7 @@ function AiSeat({
             <button
               type="button"
               onClick={() => {
+                persistApiKey(provider, "", false);
                 setApiKey("");
                 setRememberKey(false);
               }}
@@ -891,6 +928,7 @@ function AiSeat({
         </div>
         <p className="text-[11px] text-muted-foreground italic">
           Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request. Pilpul does not store it.
+          {" "}Unless remembered, it stays only in this tab session.
           {pdfUrl && provider !== "compatible" ? " The attached PDF and current notebook excerpt are included." : ""}
           {pdfUrl && provider === "compatible" ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider." : ""}
           {pdfContext?.pageNumber ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.` : ""}
