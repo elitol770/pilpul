@@ -1,7 +1,7 @@
 {
   "name": "pilpul",
   "version": "1.0.0",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",

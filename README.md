@@ -1,17 +1,65 @@
 # Pilpul
 
-A calm, paper/ink web app pairing two people anywhere for sustained one-on-one study of a shared text.
+Pilpul is a calm, open-source web app for reading one text with one other person.
+
+The core promise is simple: one text, two minds, anywhere on Earth.
+
+It is not a social network. There are no feeds, streaks, badges, public profiles, likes, ads, or engagement loops. Pilpul exists to help two people stay with a shared text long enough for the conversation to sharpen them.
+
+## Why This Is Open Source
+
+Study tools should be trustworthy. Pilpul is open source so people can inspect how matching, sessions, notes, PDF handling, and AI key usage work.
+
+Open source also protects the project from drifting into the wrong incentives. The app should be accountable to readers, not advertisers or attention metrics.
+
+## What It Does
+
+- Pair people for sustained one-on-one study.
+- Let users upload a private PDF or fetch a PDF from the web.
+- Provide a quiet study room with a PDF reader, shared notebook, and voice or video.
+- Keep AI silent until summoned.
+- Support bring-your-own-key AI through Anthropic, OpenAI, or OpenAI-compatible providers.
+- Track private notebooks and reading history.
+- Provide a simple open requests board for people looking to read the same text.
+
+## What It Refuses
+
+- No feed.
+- No followers.
+- No likes.
+- No streaks.
+- No badges.
+- No ads.
+- No data harvesting.
+- No AI that interrupts the room.
 
 ## Stack
 
-- React + Vite + Tailwind + shadcn/ui
-- Express backend with Supabase persistence
-- wouter v3 (hash routing for iframe compatibility)
+- React, Vite, Tailwind, and shadcn/ui
+- Express backend and Cloudflare Pages Functions
+- Supabase persistence and Supabase Storage
+- wouter hash routing
 - TanStack Query
-- Jitsi public meet embed for audio
-- AI third seat with bring-your-own key for Anthropic, OpenAI, or OpenAI-compatible providers, called directly from the browser
+- Jitsi public meet embed for audio and video
+- PDF.js for in-app PDF reading
+- Browser-side bring-your-own-key AI calls
 
-## Run locally
+## Screens
+
+1. Sign-in
+2. Home
+3. Find a partner
+4. Queue
+5. Open requests board
+6. Private invite flow
+7. Session room
+8. Notebook archive
+9. About page
+10. Maintainer dashboard
+
+Screenshots should be added before the public launch. See `docs/screenshots/README.md`.
+
+## Run Locally
 
 ```bash
 npm install
@@ -19,63 +67,101 @@ cp .env.example .env
 npm run dev
 ```
 
-Opens on http://localhost:5000. The server expects `SUPABASE_URL` and
-`SUPABASE_SERVICE_ROLE_KEY` in `.env`.
+The app opens on `http://localhost:5000`.
 
-## Build for production
+Required local environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Optional environment variables:
+
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+- `APP_ORIGIN`
+- `MAINTAINER_EMAILS`
+- `ALLOW_DEV_MAGIC_LINKS`
+- `ALLOW_UNVERIFIED_EMAIL_CLAIM`
+
+## Build
 
 ```bash
 npm run build
 NODE_ENV=production node dist/index.cjs
 ```
 
-## Auth model
+## Database
 
-Sign-in uses short-lived, one-time magic links sent through Resend. The link
-returns to `/#/auth/callback`, where the app verifies the token and links the
-browser to the Supabase user record with an HttpOnly session cookie. Local
-development can expose a dev sign-in link when Resend is not configured.
+Supabase migrations live in `supabase/migrations`.
 
-High-risk endpoints use database-backed rate limits in Supabase so counters
-survive Cloudflare isolate restarts.
-
-## Demo seed
-
-To experience the session room solo, after creating a request from `/find` and landing on `/queue`, hit:
-
-```
-POST /api/demo/seed-partner
+```bash
+npm run db:push
 ```
 
-This creates a fake partner ("David", Lisbon) and matches with you instantly.
+## Authentication
 
-## Aesthetic constraints
+Production sign-in uses short-lived, one-time magic links sent through Resend. The link returns to `/#/auth/callback`, where the app verifies the token and links the browser to the Supabase user record with an HttpOnly session cookie.
 
-- Paper `#f7f3ec`, ink `#2a2520`, muted `#6b645c`, rule `#d8d0c2`, accent `#8b6f47`, soft fill `#fcfaf5`
-- Serif body (EB Garamond / Iowan / Georgia), sans-serif UI chrome (Inter)
-- Tabular figures, no gradients, no shadows, generous whitespace
-- No exclamation points anywhere. No emoji. Quiet voice.
+Local development can expose a dev sign-in link when Resend is not configured.
 
-## Screens
+High-risk endpoints use database-backed rate limits in Supabase so counters survive Cloudflare isolate restarts.
 
-1. Sign-in
-2. Home (active pairing card / waiting / empty)
-3. Find a partner
-4. Queue
-5. Session room (reader + collaborative notebook + Jitsi audio + AI third seat)
-6. Notebook archive
+## AI Third Seat
+
+AI is a feature, not the product.
+
+The AI panel is closed by default and only runs when a user invokes it. Users bring their own Anthropic, OpenAI, or OpenAI-compatible API key. Keys are sent from the browser to the chosen provider for that request and are not stored on Pilpul servers.
 
 ## Matching
 
-Greedy matcher in `server/matching.ts`:
-- Hard constraint: commitment level must match
-- Soft scoring: text title (100 exact / 60 substring / 30 word overlap), pace, language overlap
-- Threshold: 20
+Matching is implemented in `server/matching.ts`.
 
-## Deferred / not built
+- Hard constraint: commitment level must match.
+- Soft scoring: text title, pace, and language overlap.
+- Minimum threshold: `20`.
 
-- Yjs CRDT (notebook uses 600ms debounced PUT + 2s GET poll)
-- Curated rounds
-- Stripe credit wrapper
-- Real Sefaria/Gutenberg integration (texts hardcoded in `client/src/lib/texts.ts`)
-- Yjs or another true CRDT for collaborative notes
+## Demo Seed
+
+To experience the session room solo, create a request from `/find`, land on `/queue`, then call:
+
+```bash
+POST /api/demo/seed-partner
+```
+
+This creates a fake partner and matches with you instantly.
+
+## Aesthetic Constraints
+
+- Paper `#f7f3ec`
+- Ink `#2a2520`
+- Muted `#6b645c`
+- Rule `#d8d0c2`
+- Accent `#8b6f47`
+- Soft fill `#fcfaf5`
+- Serif body, sans-serif UI chrome
+- Tabular figures
+- No gradients
+- No shadows
+- No exclamation points
+- No emoji
+- Quiet voice
+
+## Open-Source Release
+
+Before making the GitHub repository public, complete `docs/OPEN_SOURCE_RELEASE_CHECKLIST.md`.
+
+At minimum:
+
+- Rotate any API keys that were ever pasted into a chat, terminal, issue, or local file.
+- Confirm only `.env.example` is tracked.
+- Confirm Supabase service role keys, Resend keys, and AI keys are not in Git history.
+- Add screenshots.
+- Review `SECURITY.md`.
+- Review `CONTRIBUTING.md`.
+- Confirm the license.
+
+## License
+
+Pilpul is licensed under the GNU Affero General Public License v3.0 or later. See `LICENSE`.
+
+The AGPL is intentional: if someone improves Pilpul and hosts it as a network service, the people using that service should be able to receive the source code for those improvements.
