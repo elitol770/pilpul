@@ -67,8 +67,8 @@ export default function InvitePage() {
         <h1 className="font-serif italic text-2xl mt-1">{invite.textTitle}</h1>
         <p className="text-muted-foreground mt-3">
           {invite.inviter.firstName ?? "Someone"}
-          {invite.inviter.city ? ` in ${invite.inviter.city}` : ""} invited you to study this
-          text together.
+          {invite.inviter.city ? ` in ${invite.inviter.city}` : ""} invited you to study this text
+          together.
         </p>
 
         <div className="border-y border-border py-4 mt-6 grid grid-cols-3 gap-4 text-sm">
@@ -89,7 +89,10 @@ export default function InvitePage() {
         {invite.status !== "open" ? (
           <div className="mt-8">
             <p className="font-serif italic text-lg">This invite has already been used.</p>
-            <Link href="/requests" className="inline-block mt-4 text-sm underline underline-offset-4">
+            <Link
+              href="/requests"
+              className="inline-block mt-4 text-sm underline underline-offset-4"
+            >
               browse open requests
             </Link>
           </div>

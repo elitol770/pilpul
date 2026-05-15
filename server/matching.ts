@@ -8,7 +8,7 @@ function languageSet(value: string | null | undefined): Set<string> {
       .toLowerCase()
       .split(/[,;/]|\band\b/)
       .map((item) => item.trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
 }
 
@@ -68,7 +68,9 @@ export async function runMatching(store?: IStorage): Promise<number> {
 
       // Pace affinity
       const paceOrder = { slow: 0, medium: 1, fast: 2 } as const;
-      const dp = Math.abs(paceOrder[a.pace as keyof typeof paceOrder] - paceOrder[b.pace as keyof typeof paceOrder]);
+      const dp = Math.abs(
+        paceOrder[a.pace as keyof typeof paceOrder] - paceOrder[b.pace as keyof typeof paceOrder],
+      );
       score += dp === 0 ? 20 : dp === 1 ? 8 : 0;
 
       // If both people picked the same uploaded/imported PDF, that is the
@@ -83,7 +85,8 @@ export async function runMatching(store?: IStorage): Promise<number> {
         userAId: a.userId,
         userBId: best.req.userId,
         // prefer the more specific (longer) title
-        textTitle: a.textTitle.length >= best.req.textTitle.length ? a.textTitle : best.req.textTitle,
+        textTitle:
+          a.textTitle.length >= best.req.textTitle.length ? a.textTitle : best.req.textTitle,
         textSourceId: a.textSourceId ?? best.req.textSourceId ?? null,
         pace: a.pace,
       });

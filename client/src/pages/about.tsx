@@ -14,9 +14,8 @@ export default function About() {
             A calm tool for reading one text with one other person.
           </h1>
           <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
-            Pilpul exists for sustained one-on-one study. Its success is measured in books
-            finished, conversations deepened, and questions carried honestly from one session to
-            the next.
+            Pilpul exists for sustained one-on-one study. Its success is measured in books finished,
+            conversations deepened, and questions carried honestly from one session to the next.
           </p>
         </header>
 
@@ -41,13 +40,13 @@ export default function About() {
           <div className="space-y-10">
             <Section title="Why it exists">
               <p>
-                Reading alone is useful. Reading with a serious partner is different. Another
-                person slows you down, notices your assumptions, and makes the text answer to a
-                living conversation.
+                Reading alone is useful. Reading with a serious partner is different. Another person
+                slows you down, notices your assumptions, and makes the text answer to a living
+                conversation.
               </p>
               <p>
-                Pilpul is built to protect that encounter. The interface stays quiet so the
-                session can carry the weight.
+                Pilpul is built to protect that encounter. The interface stays quiet so the session
+                can carry the weight.
               </p>
             </Section>
 

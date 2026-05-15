@@ -14,9 +14,7 @@ export type RateLimitResult = {
 
 export async function rateLimitKey(...parts: Array<string | null | undefined>): Promise<string> {
   return await hashMagicToken(
-    parts
-      .map((part) => (part || "unknown").trim().toLowerCase())
-      .join(":")
+    parts.map((part) => (part || "unknown").trim().toLowerCase()).join(":"),
   );
 }
 
@@ -31,7 +29,7 @@ export function clientIpFromHeaders(headers: Headers): string {
 
 export function clientIpFromRequestLike(
   headers: Record<string, string | string[] | undefined>,
-  fallbackIp?: string
+  fallbackIp?: string,
 ): string {
   const value = (name: string) => {
     const raw = headers[name.toLowerCase()] ?? headers[name];
@@ -46,4 +44,3 @@ export function clientIpFromRequestLike(
     "unknown"
   );
 }
-

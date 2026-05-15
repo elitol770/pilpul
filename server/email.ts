@@ -88,4 +88,3 @@ export async function sendMagicLinkEmail({
 
   return { sent: true };
 }
-

@@ -12,8 +12,8 @@ export default function Landing() {
             A quiet room for sustained study with one other person.
           </h1>
           <p className="mt-6 max-w-[620px] text-lg leading-relaxed text-muted-foreground">
-            Pilpul pairs people anywhere in the world to read a shared text together. Bring a
-            PDF, fetch one from the web, set a weekly rhythm, and enter a room built for the work.
+            Pilpul pairs people anywhere in the world to read a shared text together. Bring a PDF,
+            fetch one from the web, set a weekly rhythm, and enter a room built for the work.
           </p>
         </div>
 
@@ -24,8 +24,8 @@ export default function Landing() {
               The app succeeds when you leave it and go study.
             </p>
             <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
-              No feeds, streaks, badges, ads, public profiles, or notifications trying to pull
-              you back in. The pair is the unit. The book is the task.
+              No feeds, streaks, badges, ads, public profiles, or notifications trying to pull you
+              back in. The pair is the unit. The book is the task.
             </p>
             <div className="mt-5">
               <EmailClaimForm compact buttonLabel="begin" />
@@ -43,8 +43,8 @@ export default function Landing() {
           catalog to be useful.
         </Step>
         <Step number="2" title="Set the rhythm">
-          Choose pace, seriousness, language, and weekly availability. Matching favors pairs who
-          can actually meet.
+          Choose pace, seriousness, language, and weekly availability. Matching favors pairs who can
+          actually meet.
         </Step>
         <Step number="3" title="Enter the room">
           Read on one side, write together on the other, and open voice or video when the session
@@ -60,14 +60,17 @@ export default function Landing() {
         <div className="space-y-4 text-muted-foreground leading-relaxed">
           <p>
             Pilpul is built for the old practice of learning with another person: a partner who
-            notices what you missed, resists your easy reading, and helps you stay with a text
-            long enough for it to change you.
+            notices what you missed, resists your easy reading, and helps you stay with a text long
+            enough for it to change you.
           </p>
           <p>
-            AI is available only when summoned. It can explain, argue, or help locate sources,
-            but it does not replace the conversation.
+            AI is available only when summoned. It can explain, argue, or help locate sources, but
+            it does not replace the conversation.
           </p>
-          <Link href="/about" className="inline-block text-sm underline underline-offset-4 text-foreground">
+          <Link
+            href="/about"
+            className="inline-block text-sm underline underline-offset-4 text-foreground"
+          >
             read the mission
           </Link>
         </div>
@@ -95,7 +98,9 @@ function StudyRoomPreview() {
         <div className="p-5">
           <span className="smallcaps">notebook</span>
           <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-            <p className="font-serif italic text-foreground">Question: is patience a discipline or a mood?</p>
+            <p className="font-serif italic text-foreground">
+              Question: is patience a discipline or a mood?
+            </p>
             <p>Yael: he is not asking for withdrawal. He is asking for steadiness.</p>
             <p>Next week: Book IV, sections 1-8.</p>
           </div>

@@ -16,7 +16,10 @@ const currentPatterns: Array<{ type: string; regex: RegExp }> = [
   { type: "OpenAI API key", regex: /sk-(?:proj-)?[A-Za-z0-9_-]{20,}/g },
   { type: "Anthropic API key", regex: /sk-ant-[A-Za-z0-9_-]{20,}/g },
   { type: "Resend API key", regex: /re_[A-Za-z0-9_]{20,}/g },
-  { type: "JWT-like token", regex: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
+  {
+    type: "JWT-like token",
+    regex: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  },
   { type: "GitHub token", regex: /(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g },
   { type: "GitHub fine-grained token", regex: /github_pat_[A-Za-z0-9_]{20,}/g },
   { type: "Google API key", regex: /AIza[0-9A-Za-z_-]{20,}/g },
@@ -26,7 +29,10 @@ const historyPatterns: Array<{ type: string; pattern: string }> = [
   { type: "OpenAI API key", pattern: "sk-(proj-)?[A-Za-z0-9_-]{20,}" },
   { type: "Anthropic API key", pattern: "sk-ant-[A-Za-z0-9_-]{20,}" },
   { type: "Resend API key", pattern: "re_[A-Za-z0-9_]{20,}" },
-  { type: "JWT-like token", pattern: "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}" },
+  {
+    type: "JWT-like token",
+    pattern: "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}",
+  },
   { type: "GitHub token", pattern: "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}" },
   { type: "GitHub fine-grained token", pattern: "github_pat_[A-Za-z0-9_]{20,}" },
   { type: "Google API key", pattern: "AIza[0-9A-Za-z_-]{20,}" },
@@ -89,7 +95,7 @@ function scanHistory(): Finding[] {
         output = execFileSync(
           "git",
           ["grep", "-I", "-l", "-E", pattern, commit, "--", ".", ":(exclude)package-lock.json"],
-          { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+          { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
         );
       } catch {
         continue;

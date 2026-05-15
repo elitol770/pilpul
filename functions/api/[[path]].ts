@@ -91,7 +91,7 @@ async function rateLimitResponse(
   store: IStorage,
   action: string,
   identifier: string,
-  policy: RateLimitPolicy
+  policy: RateLimitPolicy,
 ): Promise<Response | null> {
   const result = await store.consumeRateLimit({
     key: await rateLimitKey(action, identifier),
@@ -101,12 +101,13 @@ async function rateLimitResponse(
   });
   if (result.allowed) return null;
 
-  const retryAfter = Math.max(1, Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000));
-  return json(
-    { message: "Too many attempts. Try again later." },
-    429,
-    { "Retry-After": String(retryAfter) }
+  const retryAfter = Math.max(
+    1,
+    Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000),
   );
+  return json({ message: "Too many attempts. Try again later." }, 429, {
+    "Retry-After": String(retryAfter),
+  });
 }
 
 async function getCurrentUser(store: IStorage, request: Request) {
@@ -150,16 +151,18 @@ function requireMaintainer(user: User, env: Env): Response | null {
   return null;
 }
 
-async function validateOwnedTextSource(store: IStorage, userId: string, textSourceId?: string | null) {
+async function validateOwnedTextSource(
+  store: IStorage,
+  userId: string,
+  textSourceId?: string | null,
+) {
   if (!textSourceId) return null;
   const text = await store.getReadingText(textSourceId);
   if (!text || text.ownerUserId !== userId) return json({ message: "Text source not found" }, 400);
   return null;
 }
 
-type SavePdfResult =
-  | { ok: false; response: Response }
-  | { ok: true; text: ReadingText };
+type SavePdfResult = { ok: false; response: Response } | { ok: true; text: ReadingText };
 
 async function savePdf({
   env,
@@ -186,10 +189,12 @@ async function savePdf({
   }
 
   const storagePath = `${userId}/${crypto.randomUUID()}.pdf`;
-  const { error } = await createServerSupabaseClient(env).storage.from(PDF_BUCKET).upload(storagePath, buffer, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
+  const { error } = await createServerSupabaseClient(env)
+    .storage.from(PDF_BUCKET)
+    .upload(storagePath, buffer, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
   if (error) throw new Error(`upload PDF: ${error.message}`);
 
   const text = await store.createReadingText(userId, {
@@ -209,7 +214,10 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
   const store = createStorage(env);
   const url = new URL(request.url);
-  const segments = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
+  const segments = url.pathname
+    .replace(/^\/api\/?/, "")
+    .split("/")
+    .filter(Boolean);
   const path = `/${segments.join("/")}`;
 
   try {
@@ -227,10 +235,15 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         store,
         "magic-link:ip",
         clientIpFromHeaders(request.headers),
-        LIMITS.magicLinkIp
+        LIMITS.magicLinkIp,
       );
       if (ipBlock) return ipBlock;
-      const emailBlock = await rateLimitResponse(store, "magic-link:email", email, LIMITS.magicLinkEmail);
+      const emailBlock = await rateLimitResponse(
+        store,
+        "magic-link:email",
+        email,
+        LIMITS.magicLinkEmail,
+      );
       if (emailBlock) return emailBlock;
 
       const token = createMagicToken();
@@ -259,7 +272,7 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         store,
         "auth-verify:ip",
         clientIpFromHeaders(request.headers),
-        LIMITS.verifyIp
+        LIMITS.verifyIp,
       );
       if (ipBlock) return ipBlock;
 
@@ -268,18 +281,16 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
       const consumed = await store.consumeEmailMagicLink(
         await hashMagicToken(parse.data.token),
-        new Date().toISOString()
+        new Date().toISOString(),
       );
       if (!consumed) return json({ message: "This sign-in link is invalid or expired." }, 400);
 
       const user = await store.upsertUserByEmail(consumed.email);
       const sessionId = createSessionId();
       await store.linkVisitorToUser(sessionId, user.id);
-      return json(
-        { user, redirectPath: normalizeRedirectPath(consumed.redirectPath) },
-        200,
-        { "Set-Cookie": sessionCookie(sessionId, request.url) }
-      );
+      return json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) }, 200, {
+        "Set-Cookie": sessionCookie(sessionId, request.url),
+      });
     }
 
     if (request.method === "POST" && path === "/claim-email") {
@@ -294,10 +305,15 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         store,
         "claim-email:ip",
         clientIpFromHeaders(request.headers),
-        LIMITS.magicLinkIp
+        LIMITS.magicLinkIp,
       );
       if (ipBlock) return ipBlock;
-      const emailBlock = await rateLimitResponse(store, "claim-email:email", email, LIMITS.magicLinkEmail);
+      const emailBlock = await rateLimitResponse(
+        store,
+        "claim-email:email",
+        email,
+        LIMITS.magicLinkEmail,
+      );
       if (emailBlock) return emailBlock;
 
       const user = await store.upsertUserByEmail(email);
@@ -315,7 +331,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "PATCH" && path === "/me") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
-      const limit = await rateLimitResponse(store, "profile:update", auth.user.id, LIMITS.profileUser);
+      const limit = await rateLimitResponse(
+        store,
+        "profile:update",
+        auth.user.id,
+        LIMITS.profileUser,
+      );
       if (limit) return limit;
 
       const parse = profileSchema.safeParse(await readJson(request));
@@ -336,14 +357,23 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/texts/upload") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
-      const limit = await rateLimitResponse(store, "texts:upload", auth.user.id, LIMITS.textImportUser);
+      const limit = await rateLimitResponse(
+        store,
+        "texts:upload",
+        auth.user.id,
+        LIMITS.textImportUser,
+      );
       if (limit) return limit;
 
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File)) return json({ message: "Choose a PDF file" }, 400);
       if (file.size > MAX_PDF_BYTES) return json({ message: "PDF must be 50 MB or smaller" }, 400);
-      if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      if (
+        file.type &&
+        file.type !== "application/pdf" &&
+        !file.name.toLowerCase().endsWith(".pdf")
+      ) {
         return json({ message: "Choose a PDF file" }, 400);
       }
 
@@ -362,7 +392,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
     if (request.method === "POST" && path === "/texts/fetch") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
-      const limit = await rateLimitResponse(store, "texts:fetch", auth.user.id, LIMITS.textImportUser);
+      const limit = await rateLimitResponse(
+        store,
+        "texts:fetch",
+        auth.user.id,
+        LIMITS.textImportUser,
+      );
       if (limit) return limit;
 
       const parse = fetchPdfSchema.safeParse(await readJson(request));
@@ -389,7 +424,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ text: saved.text });
     }
 
-    if (segments[0] === "texts" && segments[1] && segments[2] === "url" && request.method === "GET") {
+    if (
+      segments[0] === "texts" &&
+      segments[1] &&
+      segments[2] === "url" &&
+      request.method === "GET"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
 
@@ -405,7 +445,7 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
       const suspended = await store.getSuspendedUserIds();
       const requests = (await store.getOpenRequestsWithUsers(auth.user.id)).filter(
-        (item) => !suspended.has(item.userId)
+        (item) => !suspended.has(item.userId),
       );
       return json({ requests });
     }
@@ -445,7 +485,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "requests:create", auth.user.id, LIMITS.requestUser);
+      const limit = await rateLimitResponse(
+        store,
+        "requests:create",
+        auth.user.id,
+        LIMITS.requestUser,
+      );
       if (limit) return limit;
 
       const parse = insertRequestSchema.safeParse(await readJson(request));
@@ -453,7 +498,11 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (!parseAvailability(parse.data.scheduleWindows)) {
         return json({ message: "Choose at least one weekly meeting time" }, 400);
       }
-      const textSourceError = await validateOwnedTextSource(store, auth.user.id, parse.data.textSourceId);
+      const textSourceError = await validateOwnedTextSource(
+        store,
+        auth.user.id,
+        parse.data.textSourceId,
+      );
       if (textSourceError) return textSourceError;
 
       const partnerRequest = await store.createRequest(auth.user.id, parse.data);
@@ -461,39 +510,63 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ request: partnerRequest });
     }
 
-    if (segments[0] === "requests" && segments[1] && segments[2] === "interests" && request.method === "POST") {
+    if (
+      segments[0] === "requests" &&
+      segments[1] &&
+      segments[2] === "interests" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "requests:interest", auth.user.id, LIMITS.acceptUser);
+      const limit = await rateLimitResponse(
+        store,
+        "requests:interest",
+        auth.user.id,
+        LIMITS.acceptUser,
+      );
       if (limit) return limit;
 
       const partnerRequest = await store.getOpenRequestWithUser(segments[1]);
       if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
-      if (partnerRequest.userId === auth.user.id) return json({ message: "You cannot request your own listing." }, 400);
+      if (partnerRequest.userId === auth.user.id)
+        return json({ message: "You cannot request your own listing." }, 400);
 
       const partner = await store.getUser(partnerRequest.userId);
-      if (!partner || partner.matchingSuspendedAt) return json({ message: "That request is no longer available." }, 400);
+      if (!partner || partner.matchingSuspendedAt)
+        return json({ message: "That request is no longer available." }, 400);
 
       const interest = await store.createRequestInterest(partnerRequest.id, auth.user.id);
       return json({ interest });
     }
 
-    if (segments[0] === "request-interests" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+    if (
+      segments[0] === "request-interests" &&
+      segments[1] &&
+      segments[2] === "accept" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "requests:interest-accept", auth.user.id, LIMITS.acceptUser);
+      const limit = await rateLimitResponse(
+        store,
+        "requests:interest-accept",
+        auth.user.id,
+        LIMITS.acceptUser,
+      );
       if (limit) return limit;
 
       const interest = await store.getRequestInterest(segments[1]);
-      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
+      if (!interest || interest.status !== "pending")
+        return json({ message: "That request is no longer pending." }, 404);
 
       const partnerRequest = await store.getOpenRequestWithUser(interest.requestId);
       if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
-      if (partnerRequest.userId !== auth.user.id) return json({ message: "Only the request owner can accept this." }, 403);
+      if (partnerRequest.userId !== auth.user.id)
+        return json({ message: "Only the request owner can accept this." }, 403);
 
       const requester = await store.getUser(interest.requesterId);
       if (!requester || requester.matchingSuspendedAt) {
@@ -519,47 +592,73 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ interest: accepted, pairing });
     }
 
-    if (segments[0] === "request-interests" && segments[1] && segments[2] === "decline" && request.method === "POST") {
+    if (
+      segments[0] === "request-interests" &&
+      segments[1] &&
+      segments[2] === "decline" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
 
       const interest = await store.getRequestInterest(segments[1]);
-      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
+      if (!interest || interest.status !== "pending")
+        return json({ message: "That request is no longer pending." }, 404);
 
       const partnerRequest = await store.getOpenRequestWithUser(interest.requestId);
       if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
-      if (partnerRequest.userId !== auth.user.id) return json({ message: "Only the request owner can decline this." }, 403);
+      if (partnerRequest.userId !== auth.user.id)
+        return json({ message: "Only the request owner can decline this." }, 403);
 
       const declined = await store.setRequestInterestStatus(interest.id, "declined");
       return json({ interest: declined });
     }
 
-    if (segments[0] === "request-interests" && segments[1] && segments[2] === "cancel" && request.method === "POST") {
+    if (
+      segments[0] === "request-interests" &&
+      segments[1] &&
+      segments[2] === "cancel" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
 
       const interest = await store.getRequestInterest(segments[1]);
-      if (!interest || interest.status !== "pending") return json({ message: "That request is no longer pending." }, 404);
-      if (interest.requesterId !== auth.user.id) return json({ message: "Only the requester can cancel this." }, 403);
+      if (!interest || interest.status !== "pending")
+        return json({ message: "That request is no longer pending." }, 404);
+      if (interest.requesterId !== auth.user.id)
+        return json({ message: "Only the requester can cancel this." }, 403);
 
       const cancelled = await store.setRequestInterestStatus(interest.id, "cancelled");
       return json({ interest: cancelled });
     }
 
-    if (segments[0] === "requests" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+    if (
+      segments[0] === "requests" &&
+      segments[1] &&
+      segments[2] === "accept" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "requests:accept", auth.user.id, LIMITS.acceptUser);
+      const limit = await rateLimitResponse(
+        store,
+        "requests:accept",
+        auth.user.id,
+        LIMITS.acceptUser,
+      );
       if (limit) return limit;
 
       const partnerRequest = await store.getOpenRequestWithUser(segments[1]);
       if (!partnerRequest) return json({ message: "That request is no longer open." }, 404);
-      if (partnerRequest.userId === auth.user.id) return json({ message: "You cannot accept your own request." }, 400);
+      if (partnerRequest.userId === auth.user.id)
+        return json({ message: "You cannot accept your own request." }, 400);
 
       const partner = await store.getUser(partnerRequest.userId);
-      if (!partner || partner.matchingSuspendedAt) return json({ message: "That request is no longer available." }, 400);
+      if (!partner || partner.matchingSuspendedAt)
+        return json({ message: "That request is no longer available." }, 400);
 
       const pairing = await store.createPairing({
         userAId: partnerRequest.userId,
@@ -581,12 +680,21 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "invites:create", auth.user.id, LIMITS.inviteUser);
+      const limit = await rateLimitResponse(
+        store,
+        "invites:create",
+        auth.user.id,
+        LIMITS.inviteUser,
+      );
       if (limit) return limit;
 
       const parse = createInviteSchema.safeParse(await readJson(request));
       if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
-      const textSourceError = await validateOwnedTextSource(store, auth.user.id, parse.data.textSourceId);
+      const textSourceError = await validateOwnedTextSource(
+        store,
+        auth.user.id,
+        parse.data.textSourceId,
+      );
       if (textSourceError) return textSourceError;
       if (parse.data.scheduleWindows && !parseAvailability(parse.data.scheduleWindows)) {
         return json({ message: "Choose a valid meeting time or leave it blank" }, 400);
@@ -602,21 +710,34 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ invite });
     }
 
-    if (segments[0] === "invites" && segments[1] && segments[2] === "accept" && request.method === "POST") {
+    if (
+      segments[0] === "invites" &&
+      segments[1] &&
+      segments[2] === "accept" &&
+      request.method === "POST"
+    ) {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "invites:accept", auth.user.id, LIMITS.acceptUser);
+      const limit = await rateLimitResponse(
+        store,
+        "invites:accept",
+        auth.user.id,
+        LIMITS.acceptUser,
+      );
       if (limit) return limit;
 
       const invite = await store.getDirectInviteByToken(segments[1]);
       if (!invite) return json({ message: "Invite not found" }, 404);
-      if (invite.status !== "open") return json({ message: "This invite has already been used." }, 409);
-      if (invite.inviterId === auth.user.id) return json({ message: "Send this invite to someone else." }, 400);
+      if (invite.status !== "open")
+        return json({ message: "This invite has already been used." }, 409);
+      if (invite.inviterId === auth.user.id)
+        return json({ message: "Send this invite to someone else." }, 400);
 
       const inviter = await store.getUser(invite.inviterId);
-      if (!inviter || inviter.matchingSuspendedAt) return json({ message: "This invite is no longer available." }, 400);
+      if (!inviter || inviter.matchingSuspendedAt)
+        return json({ message: "This invite is no longer available." }, 400);
 
       const pairing = await store.createPairing({
         userAId: invite.inviterId,
@@ -642,7 +763,9 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (maintainerBlock) return maintainerBlock;
 
       const suspended = await store.getSuspendedUserIds();
-      const requests = (await store.getOpenRequestsWithUsers()).filter((item) => !suspended.has(item.userId));
+      const requests = (await store.getOpenRequestsWithUsers()).filter(
+        (item) => !suspended.has(item.userId),
+      );
       return json({ requests });
     }
 
@@ -664,7 +787,8 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         store.getSuspendedUserIds(),
       ]);
       if (!a || !b) return json({ message: "One of those requests is no longer open." }, 404);
-      if (a.userId === b.userId) return json({ message: "Choose requests from two different people." }, 400);
+      if (a.userId === b.userId)
+        return json({ message: "Choose requests from two different people." }, 400);
       if (suspended.has(a.userId) || suspended.has(b.userId)) {
         return json({ message: "One of those accounts is paused from matching." }, 400);
       }
@@ -672,11 +796,17 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       const pairing = await store.createPairing({
         userAId: a.userId,
         userBId: b.userId,
-        textTitle: parse.data.textTitle?.trim() || (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
+        textTitle:
+          parse.data.textTitle?.trim() ||
+          (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
         textSourceId: a.textSourceId ?? b.textSourceId,
         pace: a.pace === b.pace ? a.pace : a.pace,
       });
-      await Promise.all([store.closeRequest(a.id), store.closeRequest(b.id), store.createSession(pairing.id)]);
+      await Promise.all([
+        store.closeRequest(a.id),
+        store.closeRequest(b.id),
+        store.createSession(pairing.id),
+      ]);
       return json({ pairing });
     }
 
@@ -704,7 +834,7 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
           const partner = await store.getUser(partnerId);
           const sessionCount = (await store.getSessionsForPairing(pairing.id)).length;
           return { pairing, partner, sessionCount };
-        })
+        }),
       );
       return json({ pairings: enriched });
     }
@@ -723,7 +853,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       if (auth.response) return auth.response;
       const matchingBlock = requireMatchingReady(auth.user);
       if (matchingBlock) return matchingBlock;
-      const limit = await rateLimitResponse(store, "demo:seed-partner", auth.user.id, LIMITS.demoUser);
+      const limit = await rateLimitResponse(
+        store,
+        "demo:seed-partner",
+        auth.user.id,
+        LIMITS.demoUser,
+      );
       if (limit) return limit;
 
       const body = (await readJson(request)) as Record<string, unknown>;
@@ -805,7 +940,11 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
             })
             .safeParse(await readJson(request));
           if (!parse.success) return json({ message: "Invalid body" }, 400);
-          const updated = await store.updateNotebook(pairing.id, parse.data.content, parse.data.baseUpdatedAt);
+          const updated = await store.updateNotebook(
+            pairing.id,
+            parse.data.content,
+            parse.data.baseUpdatedAt,
+          );
           if (!updated && parse.data.baseUpdatedAt) {
             const current = await store.getPairing(pairing.id);
             return json(
@@ -814,7 +953,7 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
                 content: current?.notebookContent ?? "",
                 updatedAt: current?.notebookUpdatedAt ?? null,
               },
-              409
+              409,
             );
           }
           return json({
@@ -832,7 +971,12 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       }
 
       if (request.method === "POST" && segments[2] === "report") {
-        const limit = await rateLimitResponse(store, "reports:create", auth.user.id, LIMITS.reportUser);
+        const limit = await rateLimitResponse(
+          store,
+          "reports:create",
+          auth.user.id,
+          LIMITS.reportUser,
+        );
         if (limit) return limit;
 
         const parse = createReportSchema.safeParse(await readJson(request));

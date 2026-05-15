@@ -100,7 +100,10 @@ export default function Home() {
 
 function PausedCard() {
   return (
-    <div className="border border-border bg-card rounded-sm p-6 mt-4" data-testid="card-matching-paused">
+    <div
+      className="border border-border bg-card rounded-sm p-6 mt-4"
+      data-testid="card-matching-paused"
+    >
       <span className="smallcaps">matching paused</span>
       <p className="font-serif italic text-xl mt-1">This account is out of the queue.</p>
       <p className="text-muted-foreground mt-2">

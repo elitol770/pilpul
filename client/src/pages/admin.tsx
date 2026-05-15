@@ -93,12 +93,15 @@ export default function Admin() {
                 >
                   {busy ? "pairing..." : "pair selected"}
                 </button>
-                <span className="text-xs text-muted-foreground">{selected.length} of 2 selected</span>
+                <span className="text-xs text-muted-foreground">
+                  {selected.length} of 2 selected
+                </span>
               </div>
               {err && <p className="text-destructive text-sm mt-3">{err}</p>}
               {createdPairing && (
                 <p className="text-sm text-muted-foreground mt-3">
-                  Created room for <span className="font-serif italic">{createdPairing.textTitle}</span>.
+                  Created room for{" "}
+                  <span className="font-serif italic">{createdPairing.textTitle}</span>.
                 </p>
               )}
             </div>

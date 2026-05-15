@@ -134,7 +134,7 @@ export default function SessionRoom() {
                 setAiDraftPrompt(
                   context.selectedText
                     ? `Help us understand this passage from page ${context.pageNumber}:\n\n${context.selectedText}`
-                    : `Help us understand page ${context.pageNumber}.`
+                    : `Help us understand page ${context.pageNumber}.`,
                 );
                 setAiOpen(true);
                 setTab("notebook");
@@ -144,9 +144,7 @@ export default function SessionRoom() {
             <div className="max-w-prose mx-auto px-6 py-8">
               <span className="smallcaps">{text.source}</span>
               <h2 className="font-serif italic text-xl mt-1">{text.title}</h2>
-              {text.author && (
-                <p className="text-muted-foreground text-sm mt-1">{text.author}</p>
-              )}
+              {text.author && <p className="text-muted-foreground text-sm mt-1">{text.author}</p>}
               <div className="rule mt-5 mb-6" />
               {text.passages.map((p, i) => (
                 <article key={i} className="mb-10">
@@ -200,9 +198,7 @@ export default function SessionRoom() {
                 {aiOpen ? "close ai" : "summon ai"}
               </button>
               {!aiOpen && (
-                <span className="text-muted-foreground italic">
-                  AI is silent unless invoked.
-                </span>
+                <span className="text-muted-foreground italic">AI is silent unless invoked.</span>
               )}
             </div>
             <SessionTimer />
@@ -446,7 +442,9 @@ function PdfReader({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setScale((current) => Math.max(0.7, Number((current - 0.1).toFixed(2))))}
+                onClick={() =>
+                  setScale((current) => Math.max(0.7, Number((current - 0.1).toFixed(2))))
+                }
                 aria-label="Zoom out"
                 className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate"
               >
@@ -457,7 +455,9 @@ function PdfReader({
               </span>
               <button
                 type="button"
-                onClick={() => setScale((current) => Math.min(2.2, Number((current + 0.1).toFixed(2))))}
+                onClick={() =>
+                  setScale((current) => Math.min(2.2, Number((current + 0.1).toFixed(2))))
+                }
                 aria-label="Zoom in"
                 className="h-8 w-8 inline-flex items-center justify-center border border-border rounded-sm bg-card hover-elevate"
               >
@@ -628,7 +628,7 @@ function Notebook({
   const placeholder = useMemo(
     () =>
       "Write together. Paste quotes from the text, mark live questions, and keep the thread of what you decided.",
-    []
+    [],
   );
 
   return (
@@ -643,7 +643,10 @@ function Notebook({
         )}
       </div>
       {syncWarning && (
-        <p className="px-6 pb-2 text-xs italic text-muted-foreground" data-testid="text-notebook-sync-warning">
+        <p
+          className="px-6 pb-2 text-xs italic text-muted-foreground"
+          data-testid="text-notebook-sync-warning"
+        >
           {syncWarning}
         </p>
       )}
@@ -761,7 +764,7 @@ function AiSeat({
   const [apiKey, setApiKey] = useState(() => storedApiKey(storedProvider()));
   const [model, setModel] = useState(() => defaultModel(provider));
   const [compatibleBaseUrl, setCompatibleBaseUrl] = useState(() =>
-    storedValue(AI_COMPATIBLE_BASE_STORAGE, "https://openrouter.ai/api/v1")
+    storedValue(AI_COMPATIBLE_BASE_STORAGE, "https://openrouter.ai/api/v1"),
   );
   const [rememberKey, setRememberKey] = useState(() => hasRememberedApiKey(storedProvider()));
   const [prompt, setPrompt] = useState("");
@@ -826,7 +829,9 @@ function AiSeat({
       <div className="px-6 py-3 flex items-center justify-between">
         <div>
           <span className="smallcaps">ai third seat</span>
-          <p className="text-[11px] text-muted-foreground tabular mt-1">{AI_PROVIDER_LABELS[provider]} · {model || "choose model"}</p>
+          <p className="text-[11px] text-muted-foreground tabular mt-1">
+            {AI_PROVIDER_LABELS[provider]} · {model || "choose model"}
+          </p>
         </div>
         <button
           onClick={onClose}
@@ -864,7 +869,9 @@ function AiSeat({
               id="ai-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder={provider === "compatible" ? "provider-model-name" : defaultModel(provider)}
+              placeholder={
+                provider === "compatible" ? "provider-model-name" : defaultModel(provider)
+              }
               data-testid="input-ai-model"
               className="w-full bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"
             />
@@ -927,11 +934,17 @@ function AiSeat({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground italic">
-          Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request. Pilpul does not store it.
-          {" "}Unless remembered, it stays only in this tab session.
-          {pdfUrl && provider !== "compatible" ? " The attached PDF and current notebook excerpt are included." : ""}
-          {pdfUrl && provider === "compatible" ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider." : ""}
-          {pdfContext?.pageNumber ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.` : ""}
+          Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request.
+          Pilpul does not store it. Unless remembered, it stays only in this tab session.
+          {pdfUrl && provider !== "compatible"
+            ? " The attached PDF and current notebook excerpt are included."
+            : ""}
+          {pdfUrl && provider === "compatible"
+            ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider."
+            : ""}
+          {pdfContext?.pageNumber
+            ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.`
+            : ""}
         </p>
       </div>
 
@@ -961,8 +974,8 @@ function AiSeat({
               mode === "explainer"
                 ? "What does Nietzsche mean by 'slave morality' here?"
                 : mode === "devil"
-                ? "Argue against my reading."
-                : "Where else in the text does this word appear?"
+                  ? "Argue against my reading."
+                  : "Where else in the text does this word appear?"
             }
             data-testid="input-ai-prompt"
             className="flex-1 bg-background border border-border rounded-sm px-3 py-2 outline-none focus:border-primary text-sm"

@@ -5,10 +5,7 @@ function base64Url(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.length; i += 1) {
     binary += String.fromCharCode(bytes[i]);
   }
-  const base64 =
-    typeof btoa === "function"
-      ? btoa(binary)
-      : Buffer.from(bytes).toString("base64");
+  const base64 = typeof btoa === "function" ? btoa(binary) : Buffer.from(bytes).toString("base64");
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 

@@ -18,7 +18,11 @@ export function PageShell({
     <div className="min-h-screen flex flex-col">
       <header className="px-6 pt-8 pb-4">
         <div className={width + " mx-auto flex items-baseline justify-between gap-4"}>
-          <Link href="/" className="font-serif italic text-xl tracking-tight" data-testid="link-home">
+          <Link
+            href="/"
+            className="font-serif italic text-xl tracking-tight"
+            data-testid="link-home"
+          >
             Pilpul
           </Link>
           <nav className="flex items-center gap-4 text-xs">
@@ -48,7 +52,8 @@ export function PageShell({
       <footer className="px-6 pb-10">
         <div className={width + " mx-auto"}>
           <p className="text-xs text-muted-foreground italic leading-relaxed">
-            A quiet place to study with one other person, anywhere.<br />
+            A quiet place to study with one other person, anywhere.
+            <br />
             Not a social network. No feeds, no streaks, no ads.
           </p>
         </div>

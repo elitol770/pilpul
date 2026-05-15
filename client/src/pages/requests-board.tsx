@@ -94,13 +94,19 @@ export default function RequestsBoard() {
             >
               post a request
             </Link>
-            <Link href="/create" className="px-4 py-2 border border-border rounded-sm hover-elevate w-fit">
+            <Link
+              href="/create"
+              className="px-4 py-2 border border-border rounded-sm hover-elevate w-fit"
+            >
               private room
             </Link>
           </div>
         </div>
 
-        <IncomingInterests className="mt-7" onAccepted={(pairing) => setLocation(`/room/${pairing.id}`)} />
+        <IncomingInterests
+          className="mt-7"
+          onAccepted={(pairing) => setLocation(`/room/${pairing.id}`)}
+        />
 
         <div className="rule mt-8" />
         {err && <p className="text-destructive text-sm mt-4">{err}</p>}
@@ -115,7 +121,10 @@ export default function RequestsBoard() {
               find you here.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <Link href="/find" className="px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic">
+              <Link
+                href="/find"
+                className="px-5 py-2 border border-border bg-card hover-elevate active-elevate-2 rounded-sm font-serif italic"
+              >
                 post a request
               </Link>
               <Link
@@ -147,8 +156,8 @@ export default function RequestsBoard() {
                     {!!request.pendingInterestCount && (
                       <p className="text-xs text-muted-foreground italic mt-2">
                         {request.pendingInterestCount}{" "}
-                        {request.pendingInterestCount === 1 ? "person has" : "people have"} asked
-                        to read this.
+                        {request.pendingInterestCount === 1 ? "person has" : "people have"} asked to
+                        read this.
                       </p>
                     )}
                   </div>
@@ -175,7 +184,10 @@ export default function RequestsBoard() {
                         )}
                       </>
                     ) : request.viewerInterestStatus === "accepted" ? (
-                      <Link href="/" className="px-4 py-2 border border-border bg-card rounded-sm font-serif italic w-fit">
+                      <Link
+                        href="/"
+                        className="px-4 py-2 border border-border bg-card rounded-sm font-serif italic w-fit"
+                      >
                         accepted
                       </Link>
                     ) : request.viewerInterestStatus === "declined" ? (

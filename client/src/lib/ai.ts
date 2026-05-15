@@ -96,7 +96,9 @@ function systemPrompt(mode: AiMode): string {
 function userPrompt(args: AskThirdSeatArgs): string {
   return [
     `Shared text: ${args.textTitle}`,
-    args.pdfUrl ? "A PDF of the shared text is attached to this request. Use it as the primary source." : "No PDF is attached to this request.",
+    args.pdfUrl
+      ? "A PDF of the shared text is attached to this request. Use it as the primary source."
+      : "No PDF is attached to this request.",
     args.pdfContext?.pageNumber
       ? [
           `Current PDF page: ${args.pdfContext.pageNumber}`,
@@ -110,13 +112,18 @@ function userPrompt(args: AskThirdSeatArgs): string {
           .filter(Boolean)
           .join("\n\n")
       : "Current PDF page: not provided.",
-    args.notebookExcerpt ? `Recent shared notebook:\n${args.notebookExcerpt}` : "Recent shared notebook: empty or not provided.",
+    args.notebookExcerpt
+      ? `Recent shared notebook:\n${args.notebookExcerpt}`
+      : "Recent shared notebook: empty or not provided.",
     `Question:\n${args.prompt}`,
   ].join("\n\n");
 }
 
 function anthropicCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens * INPUT_DOLLARS_PER_MILLION + outputTokens * OUTPUT_DOLLARS_PER_MILLION) / 1_000_000;
+  return (
+    (inputTokens * INPUT_DOLLARS_PER_MILLION + outputTokens * OUTPUT_DOLLARS_PER_MILLION) /
+    1_000_000
+  );
 }
 
 function normalizedCompatibleUrl(baseUrl: string): string {
@@ -138,8 +145,7 @@ function responseText(body: OpenAiResponse): string {
 
 async function askAnthropic(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
   const content: Array<
-    | { type: "document"; source: { type: "url"; url: string } }
-    | { type: "text"; text: string }
+    { type: "document"; source: { type: "url"; url: string } } | { type: "text"; text: string }
   > = [];
   if (args.pdfUrl) {
     content.push({
@@ -200,8 +206,7 @@ async function askAnthropic(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
 
 async function askOpenAi(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
   const content: Array<
-    | { type: "input_text"; text: string }
-    | { type: "input_file"; file_url: string }
+    { type: "input_text"; text: string } | { type: "input_file"; file_url: string }
   > = [{ type: "input_text", text: userPrompt(args) }];
   if (args.pdfUrl) {
     content.push({
@@ -265,7 +270,9 @@ async function askCompatible(args: AskThirdSeatArgs): Promise<ThirdSeatAnswer> {
 
   const body = (await response.json().catch(() => ({}))) as CompatibleChatResponse;
   if (!response.ok) {
-    throw new Error(body.error?.message || response.statusText || "Compatible provider request failed");
+    throw new Error(
+      body.error?.message || response.statusText || "Compatible provider request failed",
+    );
   }
 
   return {

@@ -30,9 +30,13 @@ export function sessionIdFromHeaders(headers: Headers): string | null {
   );
 }
 
-export function sessionIdFromRequestLike(headers: Record<string, string | string[] | undefined>): string | null {
+export function sessionIdFromRequestLike(
+  headers: Record<string, string | string[] | undefined>,
+): string | null {
   const cookie = Array.isArray(headers.cookie) ? headers.cookie.join(";") : headers.cookie;
-  const visitor = Array.isArray(headers["x-visitor-id"]) ? headers["x-visitor-id"][0] : headers["x-visitor-id"];
+  const visitor = Array.isArray(headers["x-visitor-id"])
+    ? headers["x-visitor-id"][0]
+    : headers["x-visitor-id"];
   return safeSessionId(readCookie(cookie, SESSION_COOKIE)) || safeSessionId(visitor);
 }
 
@@ -45,4 +49,3 @@ export function clearSessionCookie(requestUrl: string): string {
   const secure = new URL(requestUrl).protocol === "https:" ? "; Secure" : "";
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
-

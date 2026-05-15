@@ -57,7 +57,7 @@ export function PdfTextPicker({
 
   function rememberText(text: ReadingText) {
     queryClient.setQueryData<{ texts: ReadingText[] }>(["/api/texts"], (current) => ({
-      texts: [text, ...((current?.texts ?? []).filter((item) => item.id !== text.id))],
+      texts: [text, ...(current?.texts ?? []).filter((item) => item.id !== text.id)],
     }));
     onSelectedTextIdChange(text.id);
     if (!textTitle.trim()) onTitleSuggestion(text.title);
@@ -230,7 +230,9 @@ export function PdfTextPicker({
         </div>
       )}
 
-      {pdfBusy === "upload" && <p className="text-xs text-muted-foreground italic mt-3">uploading PDF...</p>}
+      {pdfBusy === "upload" && (
+        <p className="text-xs text-muted-foreground italic mt-3">uploading PDF...</p>
+      )}
       {pdfErr && <p className="text-destructive text-sm mt-3">{pdfErr}</p>}
     </div>
   );

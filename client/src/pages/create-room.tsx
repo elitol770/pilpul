@@ -122,7 +122,10 @@ export default function CreateRoom() {
               >
                 {copied ? "copied" : "copy link"}
               </button>
-              <Link href="/requests" className="px-5 py-2 border border-border rounded-sm hover-elevate">
+              <Link
+                href="/requests"
+                className="px-5 py-2 border border-border rounded-sm hover-elevate"
+              >
                 browse requests
               </Link>
             </div>
@@ -181,7 +184,9 @@ export default function CreateRoom() {
                       onClick={() => setCommitment(c.value)}
                       className={
                         "border rounded-sm py-3 px-3 text-left hover-elevate " +
-                        (commitment === c.value ? "border-foreground bg-card" : "border-border bg-card")
+                        (commitment === c.value
+                          ? "border-foreground bg-card"
+                          : "border-border bg-card")
                       }
                     >
                       <span className="font-serif italic block">{c.label}</span>

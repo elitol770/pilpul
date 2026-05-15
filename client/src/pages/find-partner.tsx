@@ -65,7 +65,9 @@ export default function FindPartner() {
       <PageShell narrow>
         <div className="border border-border bg-card rounded-sm p-6 mt-4">
           <span className="smallcaps">before matching</span>
-          <p className="font-serif italic text-xl mt-1">Finish your name, city, and age confirmation.</p>
+          <p className="font-serif italic text-xl mt-1">
+            Finish your name, city, and age confirmation.
+          </p>
           <p className="text-muted-foreground mt-2">
             Your partner sees your first name and city. The 18+ confirmation is required before
             entering the queue.
@@ -116,8 +118,8 @@ export default function FindPartner() {
         <span className="smallcaps">find a partner</span>
         <h1 className="font-serif text-xl mt-1 mb-2">What do you want to read?</h1>
         <p className="text-muted-foreground italic">
-          Examples: "Nietzsche — Genealogy of Morals", "The Brothers Karamazov", "anything in
-          moral philosophy", "Talmud, Berakhot."
+          Examples: "Nietzsche — Genealogy of Morals", "The Brothers Karamazov", "anything in moral
+          philosophy", "Talmud, Berakhot."
         </p>
         <p className="text-sm text-muted-foreground mt-4">
           Already have someone in mind?{" "}
@@ -166,9 +168,7 @@ export default function FindPartner() {
                   data-testid={`button-pace-${p.value}`}
                   className={
                     "border rounded-sm py-3 px-3 text-left hover-elevate " +
-                    (pace === p.value
-                      ? "border-foreground bg-card"
-                      : "border-border bg-card")
+                    (pace === p.value ? "border-foreground bg-card" : "border-border bg-card")
                   }
                 >
                   <span className="font-serif italic block">{p.label}</span>
@@ -189,9 +189,7 @@ export default function FindPartner() {
                   data-testid={`button-commitment-${c.value}`}
                   className={
                     "border rounded-sm py-3 px-3 text-left hover-elevate " +
-                    (commitment === c.value
-                      ? "border-foreground bg-card"
-                      : "border-border bg-card")
+                    (commitment === c.value ? "border-foreground bg-card" : "border-border bg-card")
                   }
                 >
                   <span className="font-serif italic block">{c.label}</span>
@@ -208,14 +206,17 @@ export default function FindPartner() {
             <label className="smallcaps block mb-2">when can you meet?</label>
             <div className="space-y-3">
               {availability.map((window) => (
-                <div key={window.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                <div
+                  key={window.id}
+                  className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center"
+                >
                   <select
                     value={window.day}
                     onChange={(e) =>
                       setAvailability((current) =>
                         current.map((item) =>
-                          item.id === window.id ? { ...item, day: Number(e.target.value) } : item
-                        )
+                          item.id === window.id ? { ...item, day: Number(e.target.value) } : item,
+                        ),
                       )
                     }
                     data-testid={`select-day-${window.id}`}
@@ -233,8 +234,8 @@ export default function FindPartner() {
                     onChange={(e) =>
                       setAvailability((current) =>
                         current.map((item) =>
-                          item.id === window.id ? { ...item, start: e.target.value } : item
-                        )
+                          item.id === window.id ? { ...item, start: e.target.value } : item,
+                        ),
                       )
                     }
                     data-testid={`input-start-${window.id}`}
@@ -246,8 +247,8 @@ export default function FindPartner() {
                     onChange={(e) =>
                       setAvailability((current) =>
                         current.map((item) =>
-                          item.id === window.id ? { ...item, end: e.target.value } : item
-                        )
+                          item.id === window.id ? { ...item, end: e.target.value } : item,
+                        ),
                       )
                     }
                     data-testid={`input-end-${window.id}`}
@@ -258,7 +259,9 @@ export default function FindPartner() {
                     aria-label="Remove time"
                     onClick={() =>
                       setAvailability((current) =>
-                        current.length === 1 ? current : current.filter((item) => item.id !== window.id)
+                        current.length === 1
+                          ? current
+                          : current.filter((item) => item.id !== window.id),
                       )
                     }
                     disabled={availability.length === 1}

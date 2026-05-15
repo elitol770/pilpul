@@ -1,5 +1,5 @@
-import express from 'express';
-import type { Express } from 'express';
+import express from "express";
+import type { Express } from "express";
 import fs from "node:fs";
 import path from "node:path";
 

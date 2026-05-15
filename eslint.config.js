@@ -6,13 +6,7 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: [
-      "dist/**",
-      "build/**",
-      "node_modules/**",
-      ".wrangler/**",
-      "client/dist/**",
-    ],
+    ignores: ["dist/**", "build/**", "node_modules/**", ".wrangler/**", "client/dist/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -28,10 +22,7 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
   {

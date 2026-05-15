@@ -64,7 +64,7 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
 ): Promise<Response> {
   const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
   const res = await fetch(`${API_BASE}${url}`, {
@@ -78,9 +78,7 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
+export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey
@@ -88,7 +86,10 @@ export const getQueryFn: <T>(options: {
       .map((k) => String(k))
       .join("/")
       .replace(/\/+/g, "/");
-    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders(), credentials: "same-origin" });
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: authHeaders(),
+      credentials: "same-origin",
+    });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

@@ -42,10 +42,7 @@ export default function Queue() {
       <PageShell narrow>
         <div className="pt-8">
           <p className="font-serif italic text-lg">You don't have a request open.</p>
-          <Link
-            href="/find"
-            className="text-sm underline underline-offset-4 mt-3 inline-block"
-          >
+          <Link href="/find" className="text-sm underline underline-offset-4 mt-3 inline-block">
             find a partner
           </Link>
         </div>
@@ -80,7 +77,10 @@ export default function Queue() {
             style={{ animation: "pulse 2.4s ease-in-out infinite" }}
           />
         </div>
-        <p className="font-serif italic leading-relaxed max-w-md mx-auto" data-testid="text-queue-summary">
+        <p
+          className="font-serif italic leading-relaxed max-w-md mx-auto"
+          data-testid="text-queue-summary"
+        >
           Looking for someone who wants to read{" "}
           <span className="text-foreground">{r.textTitle}</span> at a {r.pace} pace
           {r.scheduleWindows ? `, ${formatAvailabilitySummary(r.scheduleWindows)}` : ""}.

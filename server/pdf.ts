@@ -3,7 +3,10 @@ export const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_HTML_BYTES = 2 * 1024 * 1024;
 
 export class PdfFetchError extends Error {
-  constructor(message: string, readonly status = 400) {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
     super(message);
     this.name = "PdfFetchError";
   }
@@ -33,7 +36,9 @@ export function titleFromUrl(url: URL): string {
 export function isPdfBytes(buffer: ArrayBuffer): boolean {
   if (buffer.byteLength < 5) return false;
   const sig = new Uint8Array(buffer.slice(0, 5));
-  return sig[0] === 0x25 && sig[1] === 0x50 && sig[2] === 0x44 && sig[3] === 0x46 && sig[4] === 0x2d;
+  return (
+    sig[0] === 0x25 && sig[1] === 0x50 && sig[2] === 0x44 && sig[3] === 0x46 && sig[4] === 0x2d
+  );
 }
 
 function looksLikePdfUrl(url: URL): boolean {
@@ -41,7 +46,10 @@ function looksLikePdfUrl(url: URL): boolean {
 }
 
 function looksLikePdfResponse(response: Response, url: URL): boolean {
-  return (response.headers.get("content-type") ?? "").toLowerCase().includes("pdf") || looksLikePdfUrl(url);
+  return (
+    (response.headers.get("content-type") ?? "").toLowerCase().includes("pdf") ||
+    looksLikePdfUrl(url)
+  );
 }
 
 function looksLikeHtmlResponse(response: Response): boolean {
@@ -109,7 +117,10 @@ export function findPdfLinks(html: string, baseUrl: string): string[] {
   });
 }
 
-export async function fetchPdfFromWeb(rawUrl: string, fetcher: typeof fetch = fetch): Promise<FetchedPdf> {
+export async function fetchPdfFromWeb(
+  rawUrl: string,
+  fetcher: typeof fetch = fetch,
+): Promise<FetchedPdf> {
   const startUrl = new URL(rawUrl);
   if (startUrl.protocol !== "http:" && startUrl.protocol !== "https:") {
     throw new PdfFetchError("Enter an http or https URL");

@@ -29,7 +29,9 @@ export default function AuthCallback() {
         if (!cancelled) setLocation(body.redirectPath || "/");
       } catch (e: any) {
         if (!cancelled) {
-          setError(e.message?.replace(/^\d+:\s*/, "") || "This sign-in link is invalid or expired.");
+          setError(
+            e.message?.replace(/^\d+:\s*/, "") || "This sign-in link is invalid or expired.",
+          );
         }
       }
     }

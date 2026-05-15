@@ -82,12 +82,16 @@ export function EmailClaimForm({
         </p>
       )}
       {sentTo && (
-        <div className="mt-3 text-sm text-muted-foreground leading-relaxed" data-testid="text-magic-link-sent">
-          <p>
-            Check {sentTo}. The link expires in 20 minutes.
-          </p>
+        <div
+          className="mt-3 text-sm text-muted-foreground leading-relaxed"
+          data-testid="text-magic-link-sent"
+        >
+          <p>Check {sentTo}. The link expires in 20 minutes.</p>
           {devLink && (
-            <a href={devLink} className="inline-block mt-2 underline underline-offset-4 text-foreground">
+            <a
+              href={devLink}
+              className="inline-block mt-2 underline underline-offset-4 text-foreground"
+            >
               open local sign-in link
             </a>
           )}

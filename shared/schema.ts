@@ -149,9 +149,7 @@ export const profileSchema = z.object({
   firstName: z.string().min(1, "Required").max(40),
   city: z.string().min(1, "Required").max(80),
   timezone: z.string().default("UTC"),
-  ageConfirmed: z
-    .boolean()
-    .refine((v) => v === true, "You must confirm you are 18 or older"),
+  ageConfirmed: z.boolean().refine((v) => v === true, "You must confirm you are 18 or older"),
 });
 export type Profile = z.infer<typeof profileSchema>;
 

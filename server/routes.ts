@@ -65,14 +65,17 @@ function getSessionId(req: Request): string | null {
 }
 
 function clientIp(req: Request): string {
-  return clientIpFromRequestLike(req.headers as Record<string, string | string[] | undefined>, req.ip);
+  return clientIpFromRequestLike(
+    req.headers as Record<string, string | string[] | undefined>,
+    req.ip,
+  );
 }
 
 async function enforceRateLimit(
   res: Response,
   action: string,
   identifier: string,
-  policy: RateLimitPolicy
+  policy: RateLimitPolicy,
 ): Promise<boolean> {
   const result = await storage.consumeRateLimit({
     key: await rateLimitKey(action, identifier),
@@ -82,7 +85,10 @@ async function enforceRateLimit(
   });
   if (result.allowed) return true;
 
-  const retryAfter = Math.max(1, Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000));
+  const retryAfter = Math.max(
+    1,
+    Math.ceil((new Date(result.resetAt).getTime() - Date.now()) / 1000),
+  );
   res.setHeader("Retry-After", String(retryAfter));
   res.status(429).json({ message: "Too many attempts. Try again later." });
   return false;
@@ -148,14 +154,22 @@ function emailEnv() {
   };
 }
 
-async function validateOwnedTextSource(userId: string, textSourceId?: string | null): Promise<string | null> {
+async function validateOwnedTextSource(
+  userId: string,
+  textSourceId?: string | null,
+): Promise<string | null> {
   if (!textSourceId) return null;
   const text = await storage.getReadingText(textSourceId);
   if (!text || text.ownerUserId !== userId) return "Text source not found";
   return null;
 }
 
-async function saveFetchedPdf(userId: string, title: string, sourceUrl: string, buffer: ArrayBuffer) {
+async function saveFetchedPdf(
+  userId: string,
+  title: string,
+  sourceUrl: string,
+  buffer: ArrayBuffer,
+) {
   if (buffer.byteLength > MAX_PDF_BYTES) {
     throw new Error("PDF must be 50 MB or smaller");
   }
@@ -164,10 +178,12 @@ async function saveFetchedPdf(userId: string, title: string, sourceUrl: string, 
   }
 
   const storagePath = `${userId}/${crypto.randomUUID()}.pdf`;
-  const { error } = await createServerSupabaseClient().storage.from(PDF_BUCKET).upload(storagePath, buffer, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
+  const { error } = await createServerSupabaseClient()
+    .storage.from(PDF_BUCKET)
+    .upload(storagePath, buffer, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
   if (error) throw new Error(`upload PDF: ${error.message}`);
 
   return await storage.createReadingText(userId, {
@@ -206,7 +222,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     const origin = appOrigin(
       `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`,
-      process.env.APP_ORIGIN
+      process.env.APP_ORIGIN,
     );
     const magicLink = buildMagicLink(origin, token);
     const delivery = await sendMagicLinkEmail({ env: emailEnv(), to: email, magicLink });
@@ -228,7 +244,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.status(400).json({ message: parse.error.issues[0].message });
     }
 
-    const consumed = await storage.consumeEmailMagicLink(await hashMagicToken(parse.data.token), new Date().toISOString());
+    const consumed = await storage.consumeEmailMagicLink(
+      await hashMagicToken(parse.data.token),
+      new Date().toISOString(),
+    );
     if (!consumed) {
       return res.status(400).json({ message: "This sign-in link is invalid or expired." });
     }
@@ -238,13 +257,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.linkVisitorToUser(sessionId, user.id);
     res.setHeader(
       "Set-Cookie",
-      sessionCookie(sessionId, `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+      sessionCookie(
+        sessionId,
+        `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`,
+      ),
     );
     res.json({ user, redirectPath: normalizeRedirectPath(consumed.redirectPath) });
   });
 
   app.post("/api/claim-email", async (req, res) => {
-    if (process.env.ALLOW_UNVERIFIED_EMAIL_CLAIM !== "true" && process.env.NODE_ENV === "production") {
+    if (
+      process.env.ALLOW_UNVERIFIED_EMAIL_CLAIM !== "true" &&
+      process.env.NODE_ENV === "production"
+    ) {
       return res.status(403).json({ message: "Email verification is required." });
     }
     const parse = claimEmailSchema.safeParse(req.body);
@@ -259,7 +284,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.linkVisitorToUser(sessionId, user.id);
     res.setHeader(
       "Set-Cookie",
-      sessionCookie(sessionId, `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+      sessionCookie(
+        sessionId,
+        `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`,
+      ),
     );
     res.json({ user });
   });
@@ -269,7 +297,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (sessionId) await storage.unlinkVisitor(sessionId);
     res.setHeader(
       "Set-Cookie",
-      clearSessionCookie(`${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`)
+      clearSessionCookie(
+        `${req.protocol}://${req.get("host") ?? "localhost:5000"}${req.originalUrl}`,
+      ),
     );
     res.json({ ok: true });
   });
@@ -295,7 +325,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/texts/upload", requireUser, async (_req, res) => {
     res.status(501).json({
-      message: "Local Express dev does not handle multipart uploads. Use Cloudflare Pages dev for PDF upload testing.",
+      message:
+        "Local Express dev does not handle multipart uploads. Use Cloudflare Pages dev for PDF upload testing.",
     });
   });
 
@@ -312,7 +343,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       fetchedPdf = await fetchPdfFromWeb(parse.data.url);
     } catch (error) {
-      if (error instanceof PdfFetchError) return res.status(error.status).json({ message: error.message });
+      if (error instanceof PdfFetchError)
+        return res.status(error.status).json({ message: error.message });
       throw error;
     }
 
@@ -320,7 +352,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       user.id,
       cleanTitle(parse.data.title, fetchedPdf.titleFallback),
       fetchedPdf.sourceUrl,
-      fetchedPdf.buffer
+      fetchedPdf.buffer,
     );
     res.json({ text });
   });
@@ -328,7 +360,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/texts/:id/url", requireUser, async (req, res) => {
     const user = (req as any).user;
     const text = await storage.getReadingText(String(req.params.id));
-    if (!text || text.ownerUserId !== user.id) return res.status(404).json({ message: "Not found" });
+    if (!text || text.ownerUserId !== user.id)
+      return res.status(404).json({ message: "Not found" });
     const signedUrl = await storage.createReadingTextSignedUrl(text.id);
     res.json({ signedUrl });
   });
@@ -337,7 +370,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/requests/open", requireUser, async (req, res) => {
     const user = (req as any).user;
     const suspended = await storage.getSuspendedUserIds();
-    const requests = (await storage.getOpenRequestsWithUsers(user.id)).filter((item) => !suspended.has(item.userId));
+    const requests = (await storage.getOpenRequestsWithUsers(user.id)).filter(
+      (item) => !suspended.has(item.userId),
+    );
     res.json({ requests });
   });
 
@@ -391,7 +426,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!(await enforceRateLimit(res, "requests:interest", user.id, LIMITS.acceptUser))) return;
 
     const partnerRequest = await storage.getOpenRequestWithUser(String(req.params.id));
-    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (!partnerRequest)
+      return res.status(404).json({ message: "That request is no longer open." });
     if (partnerRequest.userId === user.id) {
       return res.status(400).json({ message: "You cannot request your own listing." });
     }
@@ -408,7 +444,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/request-interests/:id/accept", requireUser, async (req, res) => {
     const user = (req as any).user;
     if (!requireMatchingReady(user, res)) return;
-    if (!(await enforceRateLimit(res, "requests:interest-accept", user.id, LIMITS.acceptUser))) return;
+    if (!(await enforceRateLimit(res, "requests:interest-accept", user.id, LIMITS.acceptUser)))
+      return;
 
     const interest = await storage.getRequestInterest(String(req.params.id));
     if (!interest || interest.status !== "pending") {
@@ -416,7 +453,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     const partnerRequest = await storage.getOpenRequestWithUser(interest.requestId);
-    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (!partnerRequest)
+      return res.status(404).json({ message: "That request is no longer open." });
     if (partnerRequest.userId !== user.id) {
       return res.status(403).json({ message: "Only the request owner can accept this." });
     }
@@ -453,7 +491,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     const partnerRequest = await storage.getOpenRequestWithUser(interest.requestId);
-    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
+    if (!partnerRequest)
+      return res.status(404).json({ message: "That request is no longer open." });
     if (partnerRequest.userId !== user.id) {
       return res.status(403).json({ message: "Only the request owner can decline this." });
     }
@@ -482,8 +521,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!(await enforceRateLimit(res, "requests:accept", user.id, LIMITS.acceptUser))) return;
 
     const partnerRequest = await storage.getOpenRequestWithUser(String(req.params.id));
-    if (!partnerRequest) return res.status(404).json({ message: "That request is no longer open." });
-    if (partnerRequest.userId === user.id) return res.status(400).json({ message: "You cannot accept your own request." });
+    if (!partnerRequest)
+      return res.status(404).json({ message: "That request is no longer open." });
+    if (partnerRequest.userId === user.id)
+      return res.status(400).json({ message: "You cannot accept your own request." });
 
     const partner = await storage.getUser(partnerRequest.userId);
     if (!partner || partner.matchingSuspendedAt) {
@@ -536,8 +577,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     const invite = await storage.getDirectInviteByToken(String(req.params.token));
     if (!invite) return res.status(404).json({ message: "Invite not found" });
-    if (invite.status !== "open") return res.status(409).json({ message: "This invite has already been used." });
-    if (invite.inviterId === user.id) return res.status(400).json({ message: "Send this invite to someone else." });
+    if (invite.status !== "open")
+      return res.status(409).json({ message: "This invite has already been used." });
+    if (invite.inviterId === user.id)
+      return res.status(400).json({ message: "Send this invite to someone else." });
 
     const inviter = await storage.getUser(invite.inviterId);
     if (!inviter || inviter.matchingSuspendedAt) {
@@ -566,7 +609,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = (req as any).user;
     if (!requireMaintainer(user, res)) return;
     const suspended = await storage.getSuspendedUserIds();
-    const requests = (await storage.getOpenRequestsWithUsers()).filter((item) => !suspended.has(item.userId));
+    const requests = (await storage.getOpenRequestsWithUsers()).filter(
+      (item) => !suspended.has(item.userId),
+    );
     res.json({ requests });
   });
 
@@ -584,8 +629,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       storage.getOpenRequestWithUser(parse.data.requestBId),
       storage.getSuspendedUserIds(),
     ]);
-    if (!a || !b) return res.status(404).json({ message: "One of those requests is no longer open." });
-    if (a.userId === b.userId) return res.status(400).json({ message: "Choose requests from two different people." });
+    if (!a || !b)
+      return res.status(404).json({ message: "One of those requests is no longer open." });
+    if (a.userId === b.userId)
+      return res.status(400).json({ message: "Choose requests from two different people." });
     if (suspended.has(a.userId) || suspended.has(b.userId)) {
       return res.status(400).json({ message: "One of those accounts is paused from matching." });
     }
@@ -593,11 +640,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const pairing = await storage.createPairing({
       userAId: a.userId,
       userBId: b.userId,
-      textTitle: parse.data.textTitle?.trim() || (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
+      textTitle:
+        parse.data.textTitle?.trim() ||
+        (a.textTitle === b.textTitle ? a.textTitle : `${a.textTitle} / ${b.textTitle}`),
       textSourceId: a.textSourceId ?? b.textSourceId,
       pace: a.pace,
     });
-    await Promise.all([storage.closeRequest(a.id), storage.closeRequest(b.id), storage.createSession(pairing.id)]);
+    await Promise.all([
+      storage.closeRequest(a.id),
+      storage.closeRequest(b.id),
+      storage.createSession(pairing.id),
+    ]);
     res.json({ pairing });
   });
 
@@ -622,7 +675,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const partner = await storage.getUser(partnerId);
         const sessionCount = (await storage.getSessionsForPairing(p.id)).length;
         return { pairing: p, partner, sessionCount };
-      })
+      }),
     );
     res.json({ pairings: enriched });
   });
@@ -679,7 +732,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       })
       .safeParse(req.body);
     if (!parse.success) return res.status(400).json({ message: "Invalid body" });
-    const updated = await storage.updateNotebook(pairing.id, parse.data.content, parse.data.baseUpdatedAt);
+    const updated = await storage.updateNotebook(
+      pairing.id,
+      parse.data.content,
+      parse.data.baseUpdatedAt,
+    );
     if (!updated && parse.data.baseUpdatedAt) {
       const current = await storage.getPairing(pairing.id);
       return res.status(409).json({

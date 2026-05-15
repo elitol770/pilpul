@@ -8,7 +8,8 @@ export default function SignIn() {
       <div className="pt-8 pb-12">
         <h1 className="font-serif text-2xl mb-3">Enter Pilpul.</h1>
         <p className="text-muted-foreground leading-relaxed">
-          Use the same email each time. We'll send a short-lived link so there is no password to remember.
+          Use the same email each time. We'll send a short-lived link so there is no password to
+          remember.
         </p>
 
         <EmailClaimForm />

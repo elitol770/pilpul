@@ -162,13 +162,19 @@ function requireEnv(env: SupabaseEnv, name: keyof SupabaseEnv): string {
   return value;
 }
 
-export function createServerSupabaseClient(env: SupabaseEnv = process.env as SupabaseEnv): SupabaseClient {
-  return createClient(requireEnv(env, "SUPABASE_URL"), requireEnv(env, "SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+export function createServerSupabaseClient(
+  env: SupabaseEnv = process.env as SupabaseEnv,
+): SupabaseClient {
+  return createClient(
+    requireEnv(env, "SUPABASE_URL"),
+    requireEnv(env, "SUPABASE_SERVICE_ROLE_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     },
-  });
+  );
 }
 
 export function createStorage(env: SupabaseEnv): SupabaseStorage {
@@ -228,7 +234,9 @@ function mapPublicUser(row: DbUser): RequestWithUser["user"] {
 function mapRequestWithUser(row: DbRequestWithUser): RequestWithUser {
   return {
     ...mapRequest(row),
-    user: row.users ? mapPublicUser(row.users) : { id: row.user_id, firstName: null, city: null, timezone: null },
+    user: row.users
+      ? mapPublicUser(row.users)
+      : { id: row.user_id, firstName: null, city: null, timezone: null },
   };
 }
 
@@ -243,10 +251,14 @@ function mapRequestInterest(row: DbRequestInterest): RequestInterest {
   };
 }
 
-function mapRequestInterestWithRequester(row: DbRequestInterestWithRequester): RequestInterestWithRequester {
+function mapRequestInterestWithRequester(
+  row: DbRequestInterestWithRequester,
+): RequestInterestWithRequester {
   return {
     ...mapRequestInterest(row),
-    requester: row.users ? mapPublicUser(row.users) : { id: row.requester_id, firstName: null, city: null, timezone: null },
+    requester: row.users
+      ? mapPublicUser(row.users)
+      : { id: row.requester_id, firstName: null, city: null, timezone: null },
   };
 }
 
@@ -271,7 +283,9 @@ function mapDirectInvite(row: DbDirectInvite): DirectInvite {
 function mapDirectInviteWithInviter(row: DbDirectInviteWithInviter): DirectInviteWithInviter {
   return {
     ...mapDirectInvite(row),
-    inviter: row.users ? mapPublicUser(row.users) : { id: row.inviter_id, firstName: null, city: null, timezone: null },
+    inviter: row.users
+      ? mapPublicUser(row.users)
+      : { id: row.inviter_id, firstName: null, city: null, timezone: null },
   };
 }
 
@@ -339,7 +353,7 @@ export interface IStorage {
   upsertUserByEmail(email: string): Promise<User>;
   updateUserProfile(
     id: string,
-    profile: { firstName: string; city: string; timezone: string; ageConfirmed: boolean }
+    profile: { firstName: string; city: string; timezone: string; ageConfirmed: boolean },
   ): Promise<User | undefined>;
   getUserForVisitor(visitorId: string): Promise<User | undefined>;
   linkVisitorToUser(visitorId: string, userId: string): Promise<void>;
@@ -352,7 +366,7 @@ export interface IStorage {
   }): Promise<void>;
   consumeEmailMagicLink(
     tokenHash: string,
-    now: string
+    now: string,
   ): Promise<{ email: string; redirectPath: string | null } | undefined>;
   consumeRateLimit(args: {
     key: string;
@@ -384,7 +398,7 @@ export interface IStorage {
   }>;
   setRequestInterestStatus(
     id: string,
-    status: "accepted" | "declined" | "cancelled"
+    status: "accepted" | "declined" | "cancelled",
   ): Promise<RequestInterest | undefined>;
   declineOtherPendingInterests(requestId: string, acceptedInterestId: string): Promise<void>;
 
@@ -399,7 +413,11 @@ export interface IStorage {
   getActivePairingForUser(userId: string): Promise<Pairing | undefined>;
   getPairingsForUser(userId: string): Promise<Pairing[]>;
   getPairing(id: string): Promise<Pairing | undefined>;
-  updateNotebook(pairingId: string, content: string, expectedUpdatedAt?: string | null): Promise<Pairing | undefined>;
+  updateNotebook(
+    pairingId: string,
+    content: string,
+    expectedUpdatedAt?: string | null,
+  ): Promise<Pairing | undefined>;
   endPairing(id: string, status: "completed" | "dissolved"): Promise<void>;
   countActivePairings(): Promise<number>;
   countCompletedThisWeek(): Promise<number>;
@@ -419,7 +437,11 @@ export class SupabaseStorage implements IStorage {
   constructor(private readonly db = createServerSupabaseClient()) {}
 
   async getUser(uid: string): Promise<User | undefined> {
-    const { data, error } = await this.db.from("users").select("*").eq("id", uid).maybeSingle<DbUser>();
+    const { data, error } = await this.db
+      .from("users")
+      .select("*")
+      .eq("id", uid)
+      .maybeSingle<DbUser>();
     throwDb(error, "get user");
     return data ? mapUser(data) : undefined;
   }
@@ -451,7 +473,7 @@ export class SupabaseStorage implements IStorage {
 
   async updateUserProfile(
     uid: string,
-    profile: { firstName: string; city: string; timezone: string; ageConfirmed: boolean }
+    profile: { firstName: string; city: string; timezone: string; ageConfirmed: boolean },
   ): Promise<User | undefined> {
     const { data, error } = await this.db
       .from("users")
@@ -481,7 +503,10 @@ export class SupabaseStorage implements IStorage {
   async linkVisitorToUser(visitorId: string, userId: string): Promise<void> {
     const { error } = await this.db
       .from("visitor_sessions")
-      .upsert({ visitor_id: visitorId, user_id: userId, updated_at: nowIso() }, { onConflict: "visitor_id" });
+      .upsert(
+        { visitor_id: visitorId, user_id: userId, updated_at: nowIso() },
+        { onConflict: "visitor_id" },
+      );
     throwDb(error, "link visitor session");
   }
 
@@ -508,7 +533,7 @@ export class SupabaseStorage implements IStorage {
 
   async consumeEmailMagicLink(
     tokenHash: string,
-    now: string
+    now: string,
   ): Promise<{ email: string; redirectPath: string | null } | undefined> {
     const { data, error } = await this.db
       .from("email_magic_links")
@@ -653,7 +678,7 @@ export class SupabaseStorage implements IStorage {
       .select("id, request_id, requester_id, status")
       .in(
         "request_id",
-        requests.map((request) => request.id)
+        requests.map((request) => request.id),
       );
     throwDb(interestError, "get request interest summaries");
 
@@ -661,7 +686,10 @@ export class SupabaseStorage implements IStorage {
     const viewerIds = new Map<string, string>();
     const viewerStatuses = new Map<string, RequestInterest["status"]>();
     for (const interest of interests ?? []) {
-      const row = interest as Pick<DbRequestInterest, "id" | "request_id" | "requester_id" | "status">;
+      const row = interest as Pick<
+        DbRequestInterest,
+        "id" | "request_id" | "requester_id" | "status"
+      >;
       if (row.status === "pending") {
         pendingCounts.set(row.request_id, (pendingCounts.get(row.request_id) ?? 0) + 1);
       }
@@ -737,7 +765,8 @@ export class SupabaseStorage implements IStorage {
 
   async createRequestInterest(requestId: string, requesterId: string): Promise<RequestInterest> {
     const existing = await this.getRequestInterestForRequester(requestId, requesterId);
-    if (existing && (existing.status === "pending" || existing.status === "accepted")) return existing;
+    if (existing && (existing.status === "pending" || existing.status === "accepted"))
+      return existing;
 
     if (existing) {
       const { data, error } = await this.db
@@ -766,7 +795,7 @@ export class SupabaseStorage implements IStorage {
 
   private async getRequestInterestForRequester(
     requestId: string,
-    requesterId: string
+    requesterId: string,
   ): Promise<RequestInterest | undefined> {
     const { data, error } = await this.db
       .from("request_interests")
@@ -804,13 +833,15 @@ export class SupabaseStorage implements IStorage {
     throwDb(error, "get pending request interests");
     return {
       request,
-      interests: (data ?? []).map((row) => mapRequestInterestWithRequester(row as DbRequestInterestWithRequester)),
+      interests: (data ?? []).map((row) =>
+        mapRequestInterestWithRequester(row as DbRequestInterestWithRequester),
+      ),
     };
   }
 
   async setRequestInterestStatus(
     interestId: string,
-    status: "accepted" | "declined" | "cancelled"
+    status: "accepted" | "declined" | "cancelled",
   ): Promise<RequestInterest | undefined> {
     const { data, error } = await this.db
       .from("request_interests")
@@ -884,27 +915,36 @@ export class SupabaseStorage implements IStorage {
   }
 
   async getPairing(pid: string): Promise<Pairing | undefined> {
-    const { data, error } = await this.db.from("pairings").select("*").eq("id", pid).maybeSingle<DbPairing>();
+    const { data, error } = await this.db
+      .from("pairings")
+      .select("*")
+      .eq("id", pid)
+      .maybeSingle<DbPairing>();
     throwDb(error, "get pairing");
     return data ? mapPairing(data) : undefined;
   }
 
-  async updateNotebook(pairingId: string, content: string, expectedUpdatedAt?: string | null): Promise<Pairing | undefined> {
+  async updateNotebook(
+    pairingId: string,
+    content: string,
+    expectedUpdatedAt?: string | null,
+  ): Promise<Pairing | undefined> {
     let query = this.db
       .from("pairings")
       .update({ notebook_content: content, notebook_updated_at: nowIso() })
       .eq("id", pairingId);
     if (expectedUpdatedAt) query = query.eq("notebook_updated_at", expectedUpdatedAt);
 
-    const { data, error } = await query
-      .select("*")
-      .maybeSingle<DbPairing>();
+    const { data, error } = await query.select("*").maybeSingle<DbPairing>();
     throwDb(error, "update notebook");
     return data ? mapPairing(data) : undefined;
   }
 
   async endPairing(pid: string, status: "completed" | "dissolved"): Promise<void> {
-    const { error } = await this.db.from("pairings").update({ status, ended_at: nowIso() }).eq("id", pid);
+    const { error } = await this.db
+      .from("pairings")
+      .update({ status, ended_at: nowIso() })
+      .eq("id", pid);
     throwDb(error, "end pairing");
   }
 
@@ -928,7 +968,11 @@ export class SupabaseStorage implements IStorage {
     return count ?? 0;
   }
 
-  async createDirectInvite(inviterId: string, token: string, data: CreateInvite): Promise<DirectInvite> {
+  async createDirectInvite(
+    inviterId: string,
+    token: string,
+    data: CreateInvite,
+  ): Promise<DirectInvite> {
     const { data: row, error } = await this.db
       .from("direct_invites")
       .insert({

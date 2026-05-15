@@ -54,22 +54,16 @@ export default function Notebook() {
 
         <div className="rule mt-10" />
         <p className="text-xs text-muted-foreground italic mt-6 leading-relaxed max-w-md">
-          Your notes are private by default. After finishing a text, you can choose to
-          contribute anonymized notes to a public archive — future pairs reading the same book
-          can see what previous pairs argued about.
+          Your notes are private by default. After finishing a text, you can choose to contribute
+          anonymized notes to a public archive — future pairs reading the same book can see what
+          previous pairs argued about.
         </p>
       </div>
     </PageShell>
   );
 }
 
-function StatusLine({
-  pairing,
-  sessions,
-}: {
-  pairing: Entry["pairing"];
-  sessions: number;
-}) {
+function StatusLine({ pairing, sessions }: { pairing: Entry["pairing"]; sessions: number }) {
   if (pairing.status === "active") {
     return <span>in progress · session {sessions || 1}</span>;
   }
