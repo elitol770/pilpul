@@ -6,11 +6,28 @@ The core promise is simple: one text, two minds, anywhere on Earth.
 
 It is not a social network. There are no feeds, streaks, badges, public profiles, likes, ads, or engagement loops. Pilpul exists to help two people stay with a shared text long enough for the conversation to sharpen them.
 
+Live app: https://pilpul.org
+
 ## Why This Is Open Source
 
 Study tools should be trustworthy. Pilpul is open source so people can inspect how matching, sessions, notes, PDF handling, and AI key usage work.
 
 Open source also protects the project from drifting into the wrong incentives. The app should be accountable to readers, not advertisers or attention metrics.
+
+## Looking For Help
+
+The best first contributions are small, user-visible improvements:
+
+- Accessibility fixes in the session room and PDF reader.
+- Mobile layout polish for reading and note-taking.
+- Tests for matching, PDF fetching, auth, and notebook behavior.
+- Clearer empty states for waiting, requests, and notebooks.
+- Documentation that helps another person run the app locally.
+- Screenshots for the README and release docs.
+
+Start with `good first issue` items on GitHub or read `docs/CONTRIBUTOR_START_HERE.md`.
+
+For sharing the project publicly, see `docs/LAUNCH_AND_OUTREACH.md`.
 
 ## What It Does
 
@@ -89,6 +106,20 @@ Optional environment variables:
 npm run build
 NODE_ENV=production node dist/index.cjs
 ```
+
+## Contributing
+
+Contributions are welcome when they protect the mission: quiet study, private notes, no feeds, no ads, no engagement loops.
+
+Before opening a pull request:
+
+```bash
+npm run check
+npm run build
+npm run secrets:scan
+```
+
+See `CONTRIBUTING.md` and `docs/CONTRIBUTOR_START_HERE.md`.
 
 ## Secret Scan
 

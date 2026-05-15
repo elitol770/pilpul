@@ -2,4 +2,4 @@
 # `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
 # Apply Prettier formatting across codebase
-37203e9
+37203e9299a4c7129d0003da37ffe1c140a7b19c

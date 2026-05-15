@@ -73,6 +73,14 @@ export default function Landing() {
           >
             read the mission
           </Link>
+          <a
+            href="https://github.com/elitol770/pilpul"
+            className="ml-5 inline-block text-sm underline underline-offset-4 text-foreground"
+            target="_blank"
+            rel="noreferrer"
+          >
+            contribute on GitHub
+          </a>
         </div>
       </section>
     </PageShell>

@@ -75,10 +75,7 @@ describe("hasScheduleOverlap", () => {
 
   it("accounts for timezone difference between users", () => {
     // 9-11 New York is 14-16 UTC; 14-16 London is 14-16 UTC.
-    const a = av(
-      [{ day: 1, start: "09:00", end: "11:00" }],
-      "America/New_York",
-    );
+    const a = av([{ day: 1, start: "09:00", end: "11:00" }], "America/New_York");
     const b = av([{ day: 1, start: "14:00", end: "16:00" }], "Europe/London");
     expect(hasScheduleOverlap(a, b)).toBe(true);
   });

@@ -39,6 +39,14 @@ export function PageShell({
             <Link href="/about" className="smallcaps hover:text-foreground">
               about
             </Link>
+            <a
+              href="https://github.com/elitol770/pilpul"
+              className="smallcaps hover:text-foreground"
+              target="_blank"
+              rel="noreferrer"
+            >
+              source
+            </a>
             <span className="smallcaps hidden sm:inline">iron sharpens iron</span>
           </nav>
         </div>
@@ -54,7 +62,15 @@ export function PageShell({
           <p className="text-xs text-muted-foreground italic leading-relaxed">
             A quiet place to study with one other person, anywhere.
             <br />
-            Not a social network. No feeds, no streaks, no ads.
+            Not a social network. No feeds, no streaks, no ads.{" "}
+            <a
+              href="https://github.com/elitol770/pilpul"
+              className="underline underline-offset-4 hover:text-foreground"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open source.
+            </a>
           </p>
         </div>
       </footer>

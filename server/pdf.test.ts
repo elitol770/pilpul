@@ -116,14 +116,11 @@ describe("fetchPdfFromWeb", () => {
     const fakeFetch: typeof fetch = async (input) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url === "https://x.test/index") {
-        return makeResponse(
-          `<html><a href="https://x.test/paper.pdf">Paper</a></html>`,
-          {
-            status: 200,
-            headers: { "content-type": "text/html" },
-            url,
-          },
-        );
+        return makeResponse(`<html><a href="https://x.test/paper.pdf">Paper</a></html>`, {
+          status: 200,
+          headers: { "content-type": "text/html" },
+          url,
+        });
       }
       if (url === "https://x.test/paper.pdf") {
         return makeResponse(asPdfBuffer(), {

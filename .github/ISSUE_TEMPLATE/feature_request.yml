@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an improvement that fits Pilpul's mission.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Pilpul is intentionally quiet. Feature requests should help two people study one text together without adding feeds, streaks, ads, or engagement loops.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What real user problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest version that would help.
+    validations:
+      required: true
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Fit check
+      options:
+        - label: This does not add a feed, likes, streaks, badges, or follower mechanics.
+        - label: This keeps AI optional and silent until summoned.
+        - label: This does not add tracking, ads, or data harvesting.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. What simpler solution did you consider?

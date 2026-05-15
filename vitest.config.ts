@@ -10,7 +10,12 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "shared/**/*.test.ts", "client/**/*.test.ts"],
+    include: [
+      "server/**/*.test.ts",
+      "shared/**/*.test.ts",
+      "client/**/*.test.ts",
+      "client/**/*.test.tsx",
+    ],
     exclude: ["node_modules", "dist", "build"],
   },
 });

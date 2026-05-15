@@ -34,6 +34,14 @@ export default function About() {
               <Link href="/" className="px-5 py-2 border border-border rounded-sm hover-elevate">
                 home
               </Link>
+              <a
+                href="https://github.com/elitol770/pilpul"
+                className="px-5 py-2 border border-border rounded-sm hover-elevate"
+                target="_blank"
+                rel="noreferrer"
+              >
+                source
+              </a>
             </div>
           </aside>
 
@@ -87,6 +95,26 @@ export default function About() {
                 older before matching, and either partner can leave or report a pairing from the
                 room.
               </p>
+            </Section>
+
+            <Section title="Open source">
+              <p>
+                The code is public so readers can inspect how matching, uploaded PDFs, notes,
+                sessions, and bring-your-own-key AI work. Contributions are welcome when they keep
+                the tool quiet, private, and centered on study.
+              </p>
+              <p>
+                Start with the contributor guide or one of the small issues marked for first
+                contributors.
+              </p>
+              <a
+                href="https://github.com/elitol770/pilpul"
+                className="inline-block text-sm underline underline-offset-4 text-foreground"
+                target="_blank"
+                rel="noreferrer"
+              >
+                view the repository
+              </a>
             </Section>
           </div>
         </div>

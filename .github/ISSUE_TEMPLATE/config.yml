@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/elitol770/pilpul/security/advisories/new
+    about: Report private security issues here instead of opening a public issue.
+  - name: Live app
+    url: https://pilpul.org
+    about: Try Pilpul in the browser.
