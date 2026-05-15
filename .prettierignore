@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+.wrangler
+supabase/.branches
+supabase/.temp
+*.log
+package-lock.json
