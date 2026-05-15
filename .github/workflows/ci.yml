@@ -31,6 +31,9 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Test
+        run: npm test
+
       - name: Secrets scan
         run: npm run secrets:scan
 
