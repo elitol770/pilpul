@@ -787,6 +787,19 @@ function AiSeat({
     } catch {}
   }, [apiKey, compatibleBaseUrl, model, provider, rememberKey]);
 
+  const providerReceives = [
+    "your prompt",
+    "the recent notebook excerpt",
+    pdfContext?.selectedText
+      ? "the selected passage"
+      : pdfContext?.pageNumber
+        ? "the current page excerpt"
+        : null,
+    pdfUrl && provider !== "compatible" ? "the PDF URL" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   function chooseProvider(next: AiProvider) {
     setProvider(next);
     setApiKey(storedApiKey(next));
@@ -934,16 +947,12 @@ function AiSeat({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground italic">
-          Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request.
-          Pilpul does not store it. Unless remembered, it stays only in this tab session.
-          {pdfUrl && provider !== "compatible"
-            ? " The attached PDF and current notebook excerpt are included."
-            : ""}
+          Bring your own provider key; it is sent from this browser to{" "}
+          {AI_PROVIDER_LABELS[provider]} for this request and is not stored on Pilpul servers.
+          Remembering it is optional and saves it only on this device. The provider receives{" "}
+          {providerReceives}.
           {pdfUrl && provider === "compatible"
-            ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider."
-            : ""}
-          {pdfContext?.pageNumber
-            ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.`
+            ? " Compatible providers do not receive the PDF URL unless you include it in the prompt."
             : ""}
         </p>
       </div>
