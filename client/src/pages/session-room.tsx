@@ -789,13 +789,11 @@ function AiSeat({
 
   const providerReceives = [
     "your prompt",
-    "the recent notebook excerpt",
-    pdfContext?.selectedText
-      ? "the selected passage"
-      : pdfContext?.pageNumber
-        ? "the current page excerpt"
-        : null,
-    pdfUrl && provider !== "compatible" ? "the PDF URL" : null,
+    "recent notebook context",
+    pdfContext?.pageNumber ? "the current PDF page number" : null,
+    pdfContext?.selectedText ? "the selected passage" : null,
+    pdfContext?.pageText ? "the current page text excerpt" : null,
+    pdfUrl && provider !== "compatible" ? "the shared PDF URL" : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -946,15 +944,19 @@ function AiSeat({
             </button>
           )}
         </div>
-        <p className="text-[11px] text-muted-foreground italic">
-          Bring your own provider key; it is sent from this browser to{" "}
-          {AI_PROVIDER_LABELS[provider]} for this request and is not stored on Pilpul servers.
-          Remembering it is optional and saves it only on this device. The provider receives{" "}
-          {providerReceives}.
-          {pdfUrl && provider === "compatible"
-            ? " Compatible providers do not receive the PDF URL unless you include it in the prompt."
-            : ""}
-        </p>
+        <div className="space-y-1 text-[11px] text-muted-foreground italic">
+          <p>
+            Bring your own provider key. It is sent from this browser to{" "}
+            {AI_PROVIDER_LABELS[provider]} for this request; Pilpul servers do not store it.
+          </p>
+          <p>
+            The provider receives {providerReceives}. Remembering the key is optional; otherwise it
+            stays only in this tab session.
+            {pdfUrl && provider === "compatible"
+              ? " Compatible providers do not receive the PDF URL unless you include it in the prompt."
+              : ""}
+          </p>
+        </div>
       </div>
 
       <div className="px-6 pb-3 flex flex-wrap gap-2 text-xs">
