@@ -787,6 +787,17 @@ function AiSeat({
     } catch {}
   }, [apiKey, compatibleBaseUrl, model, provider, rememberKey]);
 
+  const providerReceives = [
+    "your prompt",
+    "recent notebook context",
+    pdfContext?.pageNumber ? "the current PDF page number" : null,
+    pdfContext?.selectedText ? "the selected passage" : null,
+    pdfContext?.pageText ? "the current page text excerpt" : null,
+    pdfUrl && provider !== "compatible" ? "the shared PDF URL" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   function chooseProvider(next: AiProvider) {
     setProvider(next);
     setApiKey(storedApiKey(next));
@@ -933,19 +944,19 @@ function AiSeat({
             </button>
           )}
         </div>
-        <p className="text-[11px] text-muted-foreground italic">
-          Your key is sent from this browser to {AI_PROVIDER_LABELS[provider]} for this request.
-          Pilpul does not store it. Unless remembered, it stays only in this tab session.
-          {pdfUrl && provider !== "compatible"
-            ? " The attached PDF and current notebook excerpt are included."
-            : ""}
-          {pdfUrl && provider === "compatible"
-            ? " Compatible providers receive the notebook excerpt; PDF support depends on the provider."
-            : ""}
-          {pdfContext?.pageNumber
-            ? ` Current page ${pdfContext.pageNumber}${pdfContext.selectedText ? " and selected passage" : ""} are included.`
-            : ""}
-        </p>
+        <div className="space-y-1 text-[11px] text-muted-foreground italic">
+          <p>
+            Bring your own provider key. It is sent from this browser to{" "}
+            {AI_PROVIDER_LABELS[provider]} for this request; Pilpul servers do not store it.
+          </p>
+          <p>
+            The provider receives {providerReceives}. Remembering the key is optional; otherwise it
+            stays only in this tab session.
+            {pdfUrl && provider === "compatible"
+              ? " Compatible providers do not receive the PDF URL unless you include it in the prompt."
+              : ""}
+          </p>
+        </div>
       </div>
 
       <div className="px-6 pb-3 flex flex-wrap gap-2 text-xs">
