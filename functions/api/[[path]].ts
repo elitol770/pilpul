@@ -224,8 +224,16 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
 
   try {
     if (request.method === "GET" && path === "/me") {
-      const user = await getCurrentUser(store, request);
-      return json({ user: user ?? null });
+      // Degrade to signed-out on lookup failure: a 500 here leaves the
+      // client flapping between its loading gate and the landing page,
+      // so a transient DB error would brick the front door for everyone.
+      try {
+        const user = await getCurrentUser(store, request);
+        return json({ user: user ?? null });
+      } catch (error) {
+        console.error("GET /api/me: visitor lookup failed", error);
+        return json({ user: null });
+      }
     }
 
     if (request.method === "POST" && path === "/auth/magic-link") {

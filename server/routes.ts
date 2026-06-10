@@ -200,8 +200,18 @@ async function saveFetchedPdf(
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   // ---- session ----
   app.get("/api/me", async (req, res) => {
-    const user = await getCurrentUser(req);
-    res.json({ user: user ?? null });
+    // Degrade to signed-out on lookup failure: a 500 here leaves the
+    // client flapping between its loading gate and the landing page
+    // (an errored /api/me query refetches on every remount and goes
+    // back to pending), so a transient DB error would brick the front
+    // door for everyone.
+    try {
+      const user = await getCurrentUser(req);
+      res.json({ user: user ?? null });
+    } catch (error) {
+      console.error("GET /api/me: visitor lookup failed", error);
+      res.json({ user: null });
+    }
   });
 
   app.post("/api/auth/magic-link", async (req, res) => {
