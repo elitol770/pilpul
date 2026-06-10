@@ -11,6 +11,7 @@ import {
   PDF_BUCKET,
 } from "../../server/pdf";
 import {
+  canUndoPairing,
   claimEmailSchema,
   createInviteSchema,
   createReportSchema,
@@ -19,6 +20,7 @@ import {
   manualPairSchema,
   profileSchema,
   requestMagicLinkSchema,
+  updateReportSchema,
   verifyMagicLinkSchema,
   type ReadingText,
   type User,
@@ -810,6 +812,56 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
       return json({ pairing });
     }
 
+    if (request.method === "GET" && path === "/admin/reports") {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const maintainerBlock = requireMaintainer(auth.user, env);
+      if (maintainerBlock) return maintainerBlock;
+
+      const onlyOpen = url.searchParams.get("status") !== "all";
+      const reports = await store.getReportsByStatus(
+        onlyOpen ? ["open"] : ["open", "reviewed", "dismissed", "actioned"],
+      );
+      const enriched = await Promise.all(
+        reports.map(async (report) => {
+          const [reporter, reported, pairing] = await Promise.all([
+            store.getUser(report.reporterId),
+            store.getUser(report.reportedId),
+            store.getPairing(report.pairingId),
+          ]);
+          return {
+            report,
+            reporterEmail: reporter?.email ?? null,
+            reportedEmail: reported?.email ?? null,
+            reportedSuspended: Boolean(reported?.matchingSuspendedAt),
+            textTitle: pairing?.textTitle ?? null,
+          };
+        }),
+      );
+      return json({ reports: enriched });
+    }
+
+    if (
+      request.method === "POST" &&
+      segments[0] === "admin" &&
+      segments[1] === "reports" &&
+      segments[2]
+    ) {
+      const auth = await requireUser(store, request);
+      if (auth.response) return auth.response;
+      const maintainerBlock = requireMaintainer(auth.user, env);
+      if (maintainerBlock) return maintainerBlock;
+
+      const parse = updateReportSchema.safeParse(await readJson(request));
+      if (!parse.success) return json({ message: parse.error.issues[0].message }, 400);
+      const report = await store.updateReportStatus(segments[2], parse.data.status);
+      if (!report) return json({ message: "Not found" }, 404);
+      if (parse.data.liftSuspension) {
+        await store.liftSuspension(report.reportedId);
+      }
+      return json({ report });
+    }
+
     if (request.method === "GET" && path === "/pairings/active") {
       const auth = await requireUser(store, request);
       if (auth.response) return auth.response;
@@ -967,6 +1019,20 @@ export const onRequest = async ({ request, env }: PagesContext): Promise<Respons
         const body = (await readJson(request)) as Record<string, unknown>;
         const status = body.status === "completed" ? "completed" : "dissolved";
         await store.endPairing(pairing.id, status);
+        return json({ ok: true });
+      }
+
+      // Cool-off: either partner can undo a fresh match. Dissolves the
+      // pairing and puts both people back in the queue.
+      if (request.method === "POST" && segments[2] === "undo") {
+        if (!canUndoPairing(pairing)) {
+          return json({ message: "The undo window for this pairing has passed." }, 409);
+        }
+        await store.endPairing(pairing.id, "dissolved");
+        await Promise.all([
+          store.reopenLatestMatchedRequest(pairing.userAId, pairing.startedAt),
+          store.reopenLatestMatchedRequest(pairing.userBId, pairing.startedAt),
+        ]);
         return json({ ok: true });
       }
 

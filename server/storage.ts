@@ -427,6 +427,10 @@ export interface IStorage {
   acceptDirectInvite(id: string, pairingId: string): Promise<DirectInvite | undefined>;
 
   createReport(reporterId: string, pairingId: string, data: CreateReport): Promise<Report>;
+  getReportsByStatus(statuses: Report["status"][]): Promise<Report[]>;
+  updateReportStatus(id: string, status: Report["status"]): Promise<Report | undefined>;
+  liftSuspension(userId: string): Promise<void>;
+  reopenLatestMatchedRequest(userId: string, pairingStartedAt: string): Promise<boolean>;
 
   createSession(pairingId: string, scheduledAt?: string): Promise<StudySession>;
   endSession(id: string, recap: string): Promise<StudySession | undefined>;
@@ -1051,6 +1055,68 @@ export class SupabaseStorage implements IStorage {
     throwDb(closeError, "close reported user's open requests");
 
     return mapReport(requireRow(row, "create report"));
+  }
+
+  async getReportsByStatus(statuses: Report["status"][]): Promise<Report[]> {
+    const { data, error } = await this.db
+      .from("reports")
+      .select("*")
+      .in("status", statuses)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    throwDb(error, "get reports");
+    return (data ?? []).map((row) => mapReport(row as DbReport));
+  }
+
+  async updateReportStatus(rid: string, status: Report["status"]): Promise<Report | undefined> {
+    const { data, error } = await this.db
+      .from("reports")
+      .update({ status })
+      .eq("id", rid)
+      .select("*")
+      .maybeSingle<DbReport>();
+    throwDb(error, "update report status");
+    return data ? mapReport(data) : undefined;
+  }
+
+  async liftSuspension(userId: string): Promise<void> {
+    const { error } = await this.db
+      .from("users")
+      .update({ matching_suspended_at: null })
+      .eq("id", userId);
+    throwDb(error, "lift suspension");
+  }
+
+  // Used by pairing undo: put the user back in the queue by reopening
+  // the request that this match consumed. Pairings don't record which
+  // request they closed, so we take the user's newest "matched"
+  // request created before the pairing started — capped at 7 days old
+  // so an invite-created pairing can't resurrect a stale request.
+  async reopenLatestMatchedRequest(userId: string, pairingStartedAt: string): Promise<boolean> {
+    const startedMs = Date.parse(pairingStartedAt);
+    if (!Number.isFinite(startedMs)) return false;
+    const oldestEligible = new Date(startedMs - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await this.db
+      .from("requests")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "matched")
+      .lte("created_at", pairingStartedAt)
+      .gte("created_at", oldestEligible)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<DbRequest>();
+    throwDb(error, "find request to reopen");
+    if (!data) return false;
+
+    const { error: reopenError } = await this.db
+      .from("requests")
+      .update({ status: "open" })
+      .eq("id", data.id)
+      .eq("status", "matched");
+    throwDb(reopenError, "reopen request");
+    return true;
   }
 
   async createSession(pairingId: string, scheduledAt?: string): Promise<StudySession> {

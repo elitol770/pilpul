@@ -15,7 +15,7 @@ import {
   type AiProvider,
   type ThirdSeatAnswer,
 } from "@/lib/ai";
-import type { ReadingText } from "@shared/schema";
+import { canUndoPairing, type ReadingText } from "@shared/schema";
 
 type RoomData = {
   pairing: {
@@ -26,6 +26,7 @@ type RoomData = {
     notebookContent: string;
     notebookUpdatedAt: string | null;
     status: string;
+    startedAt: string;
   };
   partner: { firstName: string | null; city: string | null } | null;
   readingText: (ReadingText & { signedUrl: string }) | null;
@@ -86,7 +87,7 @@ export default function SessionRoom() {
             ) : null}
           </p>
         </div>
-        <EndButton pairingId={pairing.id} />
+        <EndButton pairing={pairing} />
       </header>
 
       {/* Mobile tabs */}
@@ -1124,7 +1125,7 @@ const REPORT_REASONS = [
   "Other",
 ];
 
-function EndButton({ pairingId }: { pairingId: string }) {
+function EndButton({ pairing }: { pairing: { id: string; status: string; startedAt: string } }) {
   const [confirming, setConfirming] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState(REPORT_REASONS[0]);
@@ -1136,10 +1137,23 @@ function EndButton({ pairingId }: { pairingId: string }) {
     setBusy(true);
     setErr(null);
     try {
-      await apiRequest("POST", `/api/pairings/${pairingId}/end`, { status });
+      await apiRequest("POST", `/api/pairings/${pairing.id}/end`, { status });
       window.location.hash = "#/";
     } catch (e: any) {
       setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not end pairing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undo() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiRequest("POST", `/api/pairings/${pairing.id}/undo`, {});
+      window.location.hash = "#/";
+    } catch (e: any) {
+      setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not undo this match");
     } finally {
       setBusy(false);
     }
@@ -1149,7 +1163,7 @@ function EndButton({ pairingId }: { pairingId: string }) {
     setBusy(true);
     setErr(null);
     try {
-      await apiRequest("POST", `/api/pairings/${pairingId}/report`, {
+      await apiRequest("POST", `/api/pairings/${pairing.id}/report`, {
         reason,
         details: details.trim() || null,
       });
@@ -1221,6 +1235,17 @@ function EndButton({ pairingId }: { pairingId: string }) {
 
   return (
     <div className="flex items-center gap-2 text-xs">
+      {canUndoPairing(pairing) && (
+        <button
+          onClick={undo}
+          disabled={busy}
+          data-testid="button-undo-match"
+          title="A fresh match can be undone for a few minutes — you both go back in the queue."
+          className="px-3 py-1 border border-border rounded-sm hover-elevate"
+        >
+          undo match
+        </button>
+      )}
       <button
         onClick={() => end("completed")}
         disabled={busy}

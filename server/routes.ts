@@ -12,6 +12,7 @@ import {
   PDF_BUCKET,
 } from "./pdf";
 import {
+  canUndoPairing,
   createReportSchema,
   createInviteSchema,
   fetchPdfSchema,
@@ -20,6 +21,7 @@ import {
   profileSchema,
   claimEmailSchema,
   requestMagicLinkSchema,
+  updateReportSchema,
   verifyMagicLinkSchema,
   type User,
 } from "@shared/schema";
@@ -654,6 +656,45 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ pairing });
   });
 
+  app.get("/api/admin/reports", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMaintainer(user, res)) return;
+    const onlyOpen = req.query.status !== "all";
+    const reports = await storage.getReportsByStatus(
+      onlyOpen ? ["open"] : ["open", "reviewed", "dismissed", "actioned"],
+    );
+    const enriched = await Promise.all(
+      reports.map(async (report) => {
+        const [reporter, reported, pairing] = await Promise.all([
+          storage.getUser(report.reporterId),
+          storage.getUser(report.reportedId),
+          storage.getPairing(report.pairingId),
+        ]);
+        return {
+          report,
+          reporterEmail: reporter?.email ?? null,
+          reportedEmail: reported?.email ?? null,
+          reportedSuspended: Boolean(reported?.matchingSuspendedAt),
+          textTitle: pairing?.textTitle ?? null,
+        };
+      }),
+    );
+    res.json({ reports: enriched });
+  });
+
+  app.post("/api/admin/reports/:id", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    if (!requireMaintainer(user, res)) return;
+    const parse = updateReportSchema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ message: parse.error.issues[0].message });
+    const report = await storage.updateReportStatus(String(req.params.id), parse.data.status);
+    if (!report) return res.status(404).json({ message: "Not found" });
+    if (parse.data.liftSuspension) {
+      await storage.liftSuspension(report.reportedId);
+    }
+    res.json({ report });
+  });
+
   // ---- pairings ----
   app.get("/api/pairings/active", requireUser, async (req, res) => {
     const user = (req as any).user;
@@ -760,6 +801,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     const status = req.body?.status === "completed" ? "completed" : "dissolved";
     await storage.endPairing(pairing.id, status);
+    res.json({ ok: true });
+  });
+
+  // Cool-off: either partner can undo a fresh match. Dissolves the
+  // pairing and puts both people back in the queue.
+  app.post("/api/pairings/:id/undo", requireUser, async (req, res) => {
+    const user = (req as any).user;
+    const pid = String(req.params.id);
+    const pairing = await storage.getPairing(pid);
+    if (!pairing || (pairing.userAId !== user.id && pairing.userBId !== user.id)) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    if (!canUndoPairing(pairing)) {
+      return res.status(409).json({ message: "The undo window for this pairing has passed." });
+    }
+    await storage.endPairing(pairing.id, "dissolved");
+    await Promise.all([
+      storage.reopenLatestMatchedRequest(pairing.userAId, pairing.startedAt),
+      storage.reopenLatestMatchedRequest(pairing.userBId, pairing.startedAt),
+    ]);
     res.json({ ok: true });
   });
 

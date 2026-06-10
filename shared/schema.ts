@@ -90,6 +90,22 @@ export type StudySession = {
   createdAt: string;
 };
 
+// Either partner can undo a fresh match within this window — a
+// cool-off so strangers aren't locked in by an accidental or
+// instantly-regretted pairing.
+export const PAIRING_UNDO_WINDOW_MINUTES = 5;
+
+export function canUndoPairing(
+  pairing: { status: string; startedAt: string },
+  now: Date = new Date(),
+): boolean {
+  if (pairing.status !== "active") return false;
+  const startedMs = Date.parse(pairing.startedAt);
+  if (!Number.isFinite(startedMs)) return false;
+  const ageMs = now.getTime() - startedMs;
+  return ageMs >= 0 && ageMs <= PAIRING_UNDO_WINDOW_MINUTES * 60 * 1000;
+}
+
 export type ReadingText = {
   id: string;
   ownerUserId: string;
@@ -186,3 +202,9 @@ export const createReportSchema = z.object({
   details: z.string().max(1000).nullable().optional(),
 });
 export type CreateReport = z.infer<typeof createReportSchema>;
+
+export const updateReportSchema = z.object({
+  status: z.enum(["reviewed", "dismissed", "actioned"]),
+  liftSuspension: z.boolean().optional(),
+});
+export type UpdateReport = z.infer<typeof updateReportSchema>;
