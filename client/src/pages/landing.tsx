@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { EmailClaimForm } from "@/components/email-claim-form";
 import { PageShell } from "@/components/page-shell";
@@ -87,7 +88,76 @@ export default function Landing() {
   );
 }
 
+// The notebook writes itself in turns — one partner asks, the other
+// answers — so the preview reads as a session in motion rather than a
+// screenshot. Falls back to the static version for reduced motion.
+const NOTEBOOK_LINES = [
+  {
+    className: "font-serif italic text-foreground",
+    text: "Question: is patience a discipline or a mood?",
+  },
+  { className: "", text: "Yael: he is not asking for withdrawal. He is asking for steadiness." },
+  { className: "", text: "Next week: Book IV, sections 1-8." },
+];
+
+const TYPE_MS = 34;
+const HOLD_BEFORE = 900;
+const HOLD_BETWEEN = 1400;
+const HOLD_END = 4600;
+
+const LINE_STARTS = NOTEBOOK_LINES.reduce<number[]>((starts, _, index) => {
+  if (index === 0) return [HOLD_BEFORE];
+  const previous = NOTEBOOK_LINES[index - 1];
+  starts.push(starts[index - 1] + previous.text.length * TYPE_MS + HOLD_BETWEEN);
+  return starts;
+}, []);
+
+const LOOP_MS =
+  LINE_STARTS[NOTEBOOK_LINES.length - 1] +
+  NOTEBOOK_LINES[NOTEBOOK_LINES.length - 1].text.length * TYPE_MS +
+  HOLD_END;
+
+function usePreviewClock(): { elapsed: number; seconds: number; animate: boolean } {
+  const [animate, setAnimate] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setAnimate(true);
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => setTick(Date.now() - startedAt), 50);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return { elapsed: tick % LOOP_MS, seconds: Math.floor(tick / 1000), animate };
+}
+
 function StudyRoomPreview() {
+  const { elapsed, seconds, animate } = usePreviewClock();
+
+  const visibleChars = (index: number) => {
+    if (!animate) return NOTEBOOK_LINES[index].text.length;
+    return Math.max(
+      0,
+      Math.min(
+        NOTEBOOK_LINES[index].text.length,
+        Math.floor((elapsed - LINE_STARTS[index]) / TYPE_MS),
+      ),
+    );
+  };
+
+  const typingIndex = NOTEBOOK_LINES.findIndex(
+    (line, index) => visibleChars(index) > 0 && visibleChars(index) < line.text.length,
+  );
+
+  // The reply engages the co-operation quote — highlight it while Yael writes.
+  const yaelStart = LINE_STARTS[1];
+  const yaelEnd = yaelStart + NOTEBOOK_LINES[1].text.length * TYPE_MS;
+  const highlightQuote = animate && elapsed >= yaelStart && elapsed <= yaelEnd + HOLD_BETWEEN;
+
+  const totalSeconds = 42 * 60 + 18 + (animate ? seconds : 0);
+  const timer = `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+
   return (
     <div
       className="order-2 lg:order-1 border border-border bg-card rounded-sm overflow-hidden"
@@ -100,23 +170,34 @@ function StudyRoomPreview() {
           <div className="rule my-4" />
           <div className="space-y-3 font-serif text-sm leading-relaxed">
             <p>Begin the morning by saying to thyself, I shall meet with the busy-body...</p>
-            <p>For we are made for co-operation, like feet, like hands, like eyelids.</p>
+            <p
+              className={`transition-colors duration-700 ${highlightQuote ? "bg-accent/70" : "bg-transparent"}`}
+            >
+              For we are made for co-operation, like feet, like hands, like eyelids.
+            </p>
           </div>
         </div>
         <div className="p-5">
           <span className="smallcaps">notebook</span>
           <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-            <p className="font-serif italic text-foreground">
-              Question: is patience a discipline or a mood?
-            </p>
-            <p>Yael: he is not asking for withdrawal. He is asking for steadiness.</p>
-            <p>Next week: Book IV, sections 1-8.</p>
+            {NOTEBOOK_LINES.map((line, index) => {
+              const chars = visibleChars(index);
+              if (animate && chars === 0) return null;
+              return (
+                <p key={line.text} className={line.className}>
+                  {line.text.slice(0, chars)}
+                  {animate && index === typingIndex && (
+                    <span className="inline-block w-[2px] h-[1em] align-[-0.15em] bg-foreground/70 animate-pulse" />
+                  )}
+                </p>
+              );
+            })}
           </div>
         </div>
       </div>
       <div className="border-t border-border px-5 py-3 flex items-center justify-between text-xs text-muted-foreground">
         <span className="italic">AI is silent unless invoked.</span>
-        <span className="tabular">42:18</span>
+        <span className="tabular">{timer}</span>
       </div>
     </div>
   );
