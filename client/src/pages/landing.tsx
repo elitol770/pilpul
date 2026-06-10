@@ -8,11 +8,17 @@ export default function Landing() {
     <PageShell wide>
       <section className="pt-5 md:pt-10">
         <div className="max-w-[760px]">
-          <span className="smallcaps">one text, two minds</span>
-          <h1 className="font-serif text-[2.4rem] leading-[1.05] md:text-[4.6rem] md:leading-[0.98] mt-4">
-            A quiet room for sustained study with one other person.
-          </h1>
-          <p className="mt-6 max-w-[620px] text-lg leading-relaxed text-muted-foreground">
+          <span
+            className="smallcaps fade-up inline-block"
+            style={{ "--fade-delay": "0.05s" } as React.CSSProperties}
+          >
+            one text, two minds
+          </span>
+          <InkHeadline />
+          <p
+            className="fade-up mt-6 max-w-[620px] text-lg leading-relaxed text-muted-foreground"
+            style={{ "--fade-delay": "1.25s" } as React.CSSProperties}
+          >
             Pilpul pairs people anywhere in the world to read a shared text together. Bring a PDF,
             fetch one from the web, set a weekly rhythm, and enter a room built for the work.
           </p>
@@ -85,6 +91,42 @@ export default function Landing() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+// The headline inks itself in word by word, then a pen stroke
+// underlines the part that matters most. One-time entrance, not a
+// loop; reduced motion renders it static.
+const HEADLINE_WORDS = ["A", "quiet", "room", "for", "sustained", "study", "with"];
+const UNDERLINED_WORDS = ["one", "other", "person."];
+
+function InkHeadline() {
+  return (
+    <h1 className="font-serif text-[2.4rem] leading-[1.05] md:text-[4.6rem] md:leading-[0.98] mt-4">
+      {HEADLINE_WORDS.map((word, index) => (
+        <span key={word + index}>
+          <span className="ink-word" style={{ "--ink-i": index } as React.CSSProperties}>
+            {word}
+          </span>{" "}
+        </span>
+      ))}
+      <span className="pen-underline">
+        {UNDERLINED_WORDS.map((word, index) => (
+          <span key={word}>
+            {index > 0 ? " " : ""}
+            <span
+              className="ink-word"
+              style={{ "--ink-i": HEADLINE_WORDS.length + index } as React.CSSProperties}
+            >
+              {word}
+            </span>
+          </span>
+        ))}
+        <svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M1.5 5.8 C 18 2.4, 36 6.6, 52 4.1 S 84 2.0, 98.5 4.9" pathLength="1" />
+        </svg>
+      </span>
+    </h1>
   );
 }
 

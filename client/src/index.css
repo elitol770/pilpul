@@ -228,6 +228,79 @@
   border-top: 1px solid hsl(var(--border));
 }
 
+/* Landing hero entrance: words ink in like a pen settling on paper. */
+@keyframes ink-in {
+  from {
+    opacity: 0;
+    filter: blur(7px);
+    transform: translateY(0.22em);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+.ink-word {
+  display: inline-block;
+  opacity: 0;
+  animation: ink-in 0.65s cubic-bezier(0.2, 0.6, 0.2, 1) forwards;
+  animation-delay: calc(var(--ink-i) * 95ms + 200ms);
+}
+
+.fade-up {
+  opacity: 0;
+  animation: ink-in 0.8s cubic-bezier(0.2, 0.6, 0.2, 1) forwards;
+  animation-delay: var(--fade-delay, 1.4s);
+}
+
+/* Hand-drawn pen stroke that underlines itself after the headline lands. */
+@keyframes draw-stroke {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.pen-underline {
+  position: relative;
+  white-space: nowrap;
+}
+
+.pen-underline svg {
+  position: absolute;
+  left: -0.04em;
+  right: -0.04em;
+  bottom: -0.18em;
+  width: calc(100% + 0.08em);
+  height: 0.28em;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pen-underline path {
+  fill: none;
+  stroke: hsl(var(--primary));
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-stroke 0.9s ease-in-out forwards;
+  animation-delay: 1.55s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-word,
+  .fade-up {
+    animation: none;
+    opacity: 1;
+  }
+  .pen-underline path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* Live dot */
 .live-dot {
   display: inline-block;
