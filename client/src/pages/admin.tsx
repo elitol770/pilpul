@@ -3,7 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { PageShell } from "@/components/page-shell";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatAvailabilitySummary } from "@shared/availability";
-import type { Pairing, RequestWithUser } from "@shared/schema";
+import type { Pairing, Report, RequestWithUser } from "@shared/schema";
+
+type ReportEntry = {
+  report: Report;
+  reporterEmail: string | null;
+  reportedEmail: string | null;
+  reportedSuspended: boolean;
+  textTitle: string | null;
+};
 
 export default function Admin() {
   const [selected, setSelected] = useState<string[]>([]);
@@ -137,9 +145,103 @@ export default function Admin() {
                 ))}
               </ul>
             )}
+
+            <ReportsPanel />
           </>
         )}
       </div>
     </PageShell>
+  );
+}
+
+function ReportsPanel() {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { data, isLoading } = useQuery<{ reports: ReportEntry[] }>({
+    queryKey: ["/api/admin/reports"],
+    retry: false,
+  });
+
+  const reports = data?.reports ?? [];
+
+  async function resolve(
+    reportId: string,
+    status: "reviewed" | "dismissed" | "actioned",
+    liftSuspension: boolean,
+  ) {
+    setBusyId(reportId);
+    setErr(null);
+    try {
+      await apiRequest("POST", `/api/admin/reports/${reportId}`, { status, liftSuspension });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/reports"] });
+    } catch (e: any) {
+      setErr(e.message?.replace(/^\d+:\s*/, "") || "Could not update report");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="mt-12">
+      <span className="smallcaps">open reports</span>
+      <p className="text-muted-foreground text-sm mt-2">
+        Reporting auto-pauses the reported account from matching. Dismissing with “lift pause”
+        restores them; “keep paused” records the report as actioned and leaves the pause in place.
+      </p>
+
+      {err && <p className="text-destructive text-sm mt-3">{err}</p>}
+
+      {isLoading ? (
+        <p className="text-muted-foreground italic mt-6">loading reports...</p>
+      ) : reports.length === 0 ? (
+        <p className="font-serif italic mt-6 text-muted-foreground">No open reports.</p>
+      ) : (
+        <ul className="divide-y divide-border mt-4" role="list">
+          {reports.map(({ report, reporterEmail, reportedEmail, reportedSuspended, textTitle }) => (
+            <li key={report.id} className="py-5">
+              <p className="font-serif italic text-lg">{report.reason}</p>
+              {report.details && <p className="text-sm mt-1">{report.details}</p>}
+              <p className="text-muted-foreground text-xs mt-2">
+                {reporterEmail ?? "unknown"} reported {reportedEmail ?? "unknown"}
+                {textTitle ? (
+                  <>
+                    {" "}
+                    · <span className="font-serif italic">{textTitle}</span>
+                  </>
+                ) : null}{" "}
+                · {new Date(report.createdAt).toLocaleString()}
+                {reportedSuspended ? " · currently paused" : " · not paused"}
+              </p>
+              <div className="mt-3 flex items-center gap-2 text-xs">
+                <button
+                  onClick={() => resolve(report.id, "dismissed", true)}
+                  disabled={busyId === report.id}
+                  data-testid={`button-report-dismiss-${report.id}`}
+                  className="px-3 py-1 border border-border rounded-sm hover-elevate"
+                >
+                  dismiss + lift pause
+                </button>
+                <button
+                  onClick={() => resolve(report.id, "actioned", false)}
+                  disabled={busyId === report.id}
+                  data-testid={`button-report-action-${report.id}`}
+                  className="px-3 py-1 border border-border rounded-sm hover-elevate"
+                >
+                  actioned, keep paused
+                </button>
+                <button
+                  onClick={() => resolve(report.id, "reviewed", false)}
+                  disabled={busyId === report.id}
+                  data-testid={`button-report-reviewed-${report.id}`}
+                  className="px-3 py-1 border border-border rounded-sm hover-elevate"
+                >
+                  mark reviewed
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
