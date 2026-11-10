@@ -30,6 +30,8 @@ Avoid large rewrites unless there is an issue discussing the direction first.
 
 ## Local Setup
 
+Follow the [local setup guide](docs/RUNNING_PILPUL_LOCALLY.md) for Supabase, the local environment, sign-in and troubleshooting.
+
 ```bash
 npm install
 cp .env.example .env
